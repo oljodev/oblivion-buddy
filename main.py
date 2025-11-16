@@ -1,17 +1,4 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "discord-py",
-#     "mcstatus",
-#     "requests",
-#     "Pillow",
-#     "Pathlib",
-#     "PyNaCl",
-#     "python-dotenv",
-#     "aio-mc-rcon",
-# ]
-# ///
-import discord  
+import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 import os
