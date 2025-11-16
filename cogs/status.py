@@ -1,12 +1,12 @@
 import discord
 from discord.ext import commands, tasks
 from aiomcrcon import Client
-import getenv
+import os
 from datetime import datetime
 
-RCON_IP = getenv.get("RCON_IP", "localhost")
-RCON_PORT = getenv.get("RCON_PORT", 25575)
-RCON_PASS = getenv.get("RCON_PASS", "secret")
+RCON_IP = os.getenv("RCON_IP", "localhost")
+RCON_PORT = os.getenv("RCON_PORT", 25575)
+RCON_PASS = os.getenv("RCON_PASS", "secret")
 
 STATUS_CHANNEL_ID = 1422934996976402442
 SERVER_NAME = "Oblivion SMP"
