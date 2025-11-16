@@ -33,7 +33,7 @@ GOLD_SHADOW_COLOR = (186, 158, 90)  # Skygge
 
 
 def generate_welcome_image(member: discord.Member, server_name: str) -> io.BytesIO:
-    """Generates the WELCOME image with user's name, centered, with gold shadow text."""
+    """Generates the WELCOME image with 'WELCOME' above the user's name and adaptive sizing."""
     try:
         bg_path = get_resource_path(BACKGROUND_IMAGE_NAME)
         font_path = get_resource_path(FONT_NAME)
@@ -43,49 +43,108 @@ def generate_welcome_image(member: discord.Member, server_name: str) -> io.Bytes
 
         width, height = img.size
 
-        # Text
-        welcome_text = f"WELCOME {member.display_name.upper()}"
+        # Text pieces separated: heading above username
+        heading_text = "WELCOME"
+        username_text = member.display_name.upper()
         to_text = "to"
         server_text = server_name.upper()
 
-        # Fonts
-        font_large = ImageFont.truetype(font_path, FONT_SIZE_LARGE)
+        # Fonts: base sizes
+        font_heading = ImageFont.truetype(font_path, FONT_SIZE_LARGE)
         font_small = ImageFont.truetype(font_path, FONT_SIZE_SMALL)
 
-        # 3. Calculate positions (Centering the text)
+        # Helper: find largest font size so that text fits within max_width (with margin)
+        def fit_font_size(
+            text: str, max_width: int, start_size: int, min_size: int = 20
+        ):
+            size = start_size
+            while size >= min_size:
+                f = ImageFont.truetype(font_path, size)
+                bbox = draw.textbbox((0, 0), text, font=f)
+                text_w = bbox[2] - bbox[0]
+                if text_w <= max_width:
+                    return f, size
+                size -= 2
+            # fallback to min size
+            return ImageFont.truetype(font_path, min_size), min_size
 
-        # WELCOME USERNAME
-        bbox_welcome = draw.textbbox((0, 0), welcome_text, font=font_large)
-        text_w_welcome = bbox_welcome[2] - bbox_welcome[0]
-        text_h_welcome = bbox_welcome[3] - bbox_welcome[1]
+        # Decide max width for username (leave some horizontal margin)
+        max_text_width = width - 80
 
-        pos_x_welcome = (width - text_w_welcome) // 2
-        pos_y_welcome = height // 2 - 150
+        # Fit username font: start at heading size (so username won't exceed heading by default)
+        username_font, username_size = fit_font_size(
+            username_text, max_text_width, start_size=FONT_SIZE_LARGE
+        )
 
-        # "to"
+        # Ensure username is not larger than heading; if it is, reduce it a bit
+        if username_size >= FONT_SIZE_LARGE:
+            username_font = ImageFont.truetype(font_path, FONT_SIZE_LARGE - 6)
+            username_size = FONT_SIZE_LARGE - 6
+
+        # Measure bounding boxes
+        bbox_heading = draw.textbbox((0, 0), heading_text, font=font_heading)
+        text_w_heading = bbox_heading[2] - bbox_heading[0]
+        text_h_heading = bbox_heading[3] - bbox_heading[1]
+
+        bbox_username = draw.textbbox((0, 0), username_text, font=username_font)
+        text_w_username = bbox_username[2] - bbox_username[0]
+        text_h_username = bbox_username[3] - bbox_username[1]
+
+        # "to" and server text measurements
         bbox_to = draw.textbbox((0, 0), to_text, font=font_small)
         text_w_to = bbox_to[2] - bbox_to[0]
         text_h_to = bbox_to[3] - bbox_to[1]
 
-        pos_x_to = (width - text_w_to) // 2
-        pos_y_to = pos_y_welcome + text_h_welcome + 15
-
-        # Oblivion SMP (Avstand justert til +20 piksler)
         bbox_server = draw.textbbox((0, 0), server_text, font=font_small)
         text_w_server = bbox_server[2] - bbox_server[0]
+        text_h_server = bbox_server[3] - bbox_server[1]
 
-        pos_y_server = pos_y_to + text_h_to + 20  # Justert avstand
+        # Compute vertical layout for heading + username + "to" + server as a centered block
+        gap_between_heading_and_username = 8
+        gap_between_username_and_to = 20
+
+        block_height = (
+            text_h_heading
+            + gap_between_heading_and_username
+            + text_h_username
+            + gap_between_username_and_to
+            + text_h_to
+            + 20
+            + text_h_server
+        )
+
+        start_y = (height - block_height) // 2  # center the whole block vertically
+
+        # Positions
+        pos_x_heading = (width - text_w_heading) // 2
+        pos_y_heading = start_y
+
+        pos_x_username = (width - text_w_username) // 2
+        pos_y_username = (
+            pos_y_heading + text_h_heading + gap_between_heading_and_username
+        )
+
+        pos_x_to = (width - text_w_to) // 2
+        pos_y_to = pos_y_username + text_h_username + gap_between_username_and_to
+
         pos_x_server = (width - text_w_server) // 2
+        pos_y_server = pos_y_to + text_h_to + 20
 
-        # 4. Draw text (MED SKYGGE/OUTLINE)
-        shadow_offset = 2  # Piksler skyggen forskyves
+        # Draw shadow + main text (same style as before)
+        shadow_offset = 2
 
-        # TEGN 1: Skygge (Mørk farge, forskjøvet)
+        # Shadow layer
         draw.text(
-            (pos_x_welcome + shadow_offset, pos_y_welcome + shadow_offset),
-            welcome_text,
+            (pos_x_heading + shadow_offset, pos_y_heading + shadow_offset),
+            heading_text,
             fill=GOLD_SHADOW_COLOR,
-            font=font_large,
+            font=font_heading,
+        )
+        draw.text(
+            (pos_x_username + shadow_offset, pos_y_username + shadow_offset),
+            username_text,
+            fill=GOLD_SHADOW_COLOR,
+            font=username_font,
         )
         draw.text(
             (pos_x_to + shadow_offset, pos_y_to + shadow_offset),
@@ -100,12 +159,18 @@ def generate_welcome_image(member: discord.Member, server_name: str) -> io.Bytes
             font=font_small,
         )
 
-        # TEGN 2: Hovedteksten (Lys gullfarge, på toppen)
+        # Main gold text layer
         draw.text(
-            (pos_x_welcome, pos_y_welcome),
-            welcome_text,
+            (pos_x_heading, pos_y_heading),
+            heading_text,
             fill=GOLD_TEXT_COLOR,
-            font=font_large,
+            font=font_heading,
+        )
+        draw.text(
+            (pos_x_username, pos_y_username),
+            username_text,
+            fill=GOLD_TEXT_COLOR,
+            font=username_font,
         )
         draw.text((pos_x_to, pos_y_to), to_text, fill=GOLD_TEXT_COLOR, font=font_small)
         draw.text(
