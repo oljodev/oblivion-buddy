@@ -24,7 +24,7 @@ class ServerStatusCog(commands.Cog):
     def cog_unload(self):
         self.update_status.cancel()
 
-    @tasks.loop(seconds=30)
+    @tasks.loop(seconds=60)
     async def update_status(self):
         await self.bot.wait_until_ready()
 

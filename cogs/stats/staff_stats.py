@@ -87,7 +87,7 @@ class ServerTracker(commands.Cog):
             )
 
     # --- Embed Updater ---
-    @tasks.loop(seconds=30)
+    @tasks.loop(seconds=60)
     async def update_embed(self):
         if not self.embed_channel_id:
             logger.warning("No embed_channel_id set! Please configure it in the code.")
@@ -118,7 +118,7 @@ class ServerTracker(commands.Cog):
             inline=True,
         )
         embed.add_field(name="👥 Members", value=f"{total_members:,}", inline=True)
-        embed.set_footer(text="Auto-updated every 30 seconds")
+        embed.set_footer(text="Auto-updated every 60 seconds")
 
         try:
             # Check if we have a previous embed to edit
