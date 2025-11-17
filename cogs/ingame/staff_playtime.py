@@ -2,6 +2,7 @@ import json
 from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
+import re
 
 import discord
 from discord.ext import commands, tasks
@@ -111,6 +112,41 @@ class StaffPlaytimeCog(commands.Cog):
                     return msg
         return None
 
+    # Add parser helper
+    def _parse_rcon_list(self, response) -> tuple:
+        """
+        Return (player_count:int, player_names: list[str]) from the 'list' command output.
+        Handles various response shapes robustly.
+        """
+        player_count = 0
+        player_names = []
+
+        if not response:
+            return player_count, player_names
+
+        # coerce to text
+        text = response[0] if isinstance(response, tuple) else response
+        text = str(text).strip()
+
+        # Regex to capture "There are X of a max of Y players"
+        m = re.search(
+            r"There are\s+(\d+)\s+of a max of\s+(\d+)\s+players", text, re.IGNORECASE
+        )
+        if m:
+            try:
+                player_count = int(m.group(1))
+            except Exception:
+                player_count = 0
+
+        # Names appear after the first ":"; ensure there are actual non-empty name chars
+        if ":" in text:
+            names_part = text.split(":", 1)[1].strip()
+            if names_part:
+                # split by comma and filter empty tokens
+                player_names = [p.strip() for p in names_part.split(",") if p.strip()]
+
+        return player_count, player_names
+
     @tasks.loop(seconds=CHECK_INTERVAL)
     async def update_task(self):
         await self.bot.wait_until_ready()
@@ -129,27 +165,17 @@ class StaffPlaytimeCog(commands.Cog):
             response = None
             is_online = False
 
-        # --- PARSE SPILLERDATA (use same logic as status.py) ---
-        player_names = []
-        player_count = 0
-
-        if is_online and response:
-            try:
-                text = response[0] if isinstance(response, tuple) else response
-                parts = text.split(":")
-                if len(parts) > 1:
-                    player_names = [p.strip() for p in parts[1].split(",") if p.strip()]
-                if "There are" in text and "of a max of" in text:
-                    player_count = int(text.split("There are ")[1].split(" of")[0])
-            except Exception:
-                player_names = []
-                player_count = 0
+        # Use robust parser to decide if there are players
+        player_count, player_names = (
+            self._parse_rcon_list(response) if is_online else (0, [])
+        )
 
         any_online = (player_count > 0) or bool(player_names)
 
         now = datetime.now()
 
         # Only record/playtime-increment when at least one player is online
+        daily_changed = False
         if any_online:
             increment = CHECK_INTERVAL
             # Record the sample for rolling-window calculations
@@ -159,15 +185,17 @@ class StaffPlaytimeCog(commands.Cog):
             today = now.date().isoformat()
             self.daily.setdefault(today, 0)
             self.daily[today] += increment
-
-            # Persist daily aggregates to file (only when changed)
-            self._save_daily_data()
+            daily_changed = True
         else:
             # No players online -> do NOT append zero-samples or modify daily totals.
             increment = 0
 
         # Purge old entries beyond 30 days (always run)
         self._purge_old(now)
+
+        # Persist daily aggregates to file only if changed
+        if daily_changed:
+            self._save_daily_data()
 
         # Compute totals
         secs_24h = self._seconds_in_window(now, 24 * 3600)
