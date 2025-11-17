@@ -129,38 +129,45 @@ class StaffPlaytimeCog(commands.Cog):
             response = None
             is_online = False
 
-        # Determine if any players are online from the response
-        any_online = False
+        # --- PARSE SPILLERDATA (use same logic as status.py) ---
+        player_names = []
+        player_count = 0
+
         if is_online and response:
-            text = response[0] if isinstance(response, tuple) else response
-            if ":" in text:
-                names_part = text.split(":", 1)[1].strip()
-                if names_part:
-                    any_online = True
-            else:
+            try:
+                text = response[0] if isinstance(response, tuple) else response
+                parts = text.split(":")
+                if len(parts) > 1:
+                    player_names = [p.strip() for p in parts[1].split(",") if p.strip()]
                 if "There are" in text and "of a max of" in text:
-                    try:
-                        player_count = int(text.split("There are ")[1].split(" of")[0])
-                        any_online = player_count > 0
-                    except Exception:
-                        any_online = False
+                    player_count = int(text.split("There are ")[1].split(" of")[0])
+            except Exception:
+                player_names = []
+                player_count = 0
+
+        any_online = (player_count > 0) or bool(player_names)
 
         now = datetime.now()
-        increment = CHECK_INTERVAL if any_online else 0
 
-        # Record the sample for rolling-window calculations
-        self.history.append((now, increment))
+        # Only record/playtime-increment when at least one player is online
+        if any_online:
+            increment = CHECK_INTERVAL
+            # Record the sample for rolling-window calculations
+            self.history.append((now, increment))
 
-        # Update today's aggregate in self.daily
-        today = now.date().isoformat()
-        self.daily.setdefault(today, 0)
-        self.daily[today] += increment
+            # Update today's aggregate in self.daily
+            today = now.date().isoformat()
+            self.daily.setdefault(today, 0)
+            self.daily[today] += increment
 
-        # Purge old entries beyond 30 days
+            # Persist daily aggregates to file (only when changed)
+            self._save_daily_data()
+        else:
+            # No players online -> do NOT append zero-samples or modify daily totals.
+            increment = 0
+
+        # Purge old entries beyond 30 days (always run)
         self._purge_old(now)
-
-        # Persist daily aggregates to file
-        self._save_daily_data()
 
         # Compute totals
         secs_24h = self._seconds_in_window(now, 24 * 3600)
