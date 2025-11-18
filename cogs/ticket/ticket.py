@@ -339,7 +339,7 @@ class Tickets(commands.Cog):
 
             # Send new panel
             embed = discord.Embed(
-                title="Need Help or Support?",
+                title="Need Help, Support or Assistance?",
                 description="Click the button below to open a private ticket. Our admins and helpers will be notified and ready to assist you!\n\n**When to create a ticket:**  \n- Questions about the server or mods  \n- Bugs, exploits, or technical issues  \n- Help with other players or gameplay concerns  \n\n**Why use a ticket?**  \n- Private and faster support  \n- Keeps public channels clean  \n- Staff can track and solve issues efficiently  \n\n**Don’t worry!**  \nIt’s always better to open a ticket than ping staff in public channels. We’re here to help!",
                 color=discord.Color.dark_blue(),
             )
