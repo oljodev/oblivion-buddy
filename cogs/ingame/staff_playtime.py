@@ -21,7 +21,7 @@ CHECK_INTERVAL = 60  # 1 minute
 MAX_HISTORY_SECONDS = 30 * 24 * 3600  # 30 days
 
 # Data file (one JSON object per line, date -> seconds)
-DATA_FILE = Path(__file__).parent / "staff_playtime.json"
+DATA_FILE = Path(__file__).parent / "staff_playtime.jsonl"
 
 
 class StaffPlaytimeCog(commands.Cog):
