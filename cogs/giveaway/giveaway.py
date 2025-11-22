@@ -221,16 +221,21 @@ class JoinGiveawayButton(discord.ui.View):
                     description=self.description,
                     color=discord.Color.green(),
                 )
-                embed.add_field(
+                embed.set_field_at(
+                    0,
                     name="Ends",
-                    value=f"in {time_str} (<t:{int(self.end_time.timestamp())}:f>)",
+                    value=f"in {str(remaining).split('.')[0]}",
                     inline=False,
                 )
-                embed.add_field(name="Hosted by", value=self.host.mention, inline=True)
-                embed.add_field(
-                    name="Entries", value=str(len(self.entries)), inline=True
+                embed.set_field_at(
+                    1, name="Hosted by", value=self.host.mention, inline=True
                 )
-                embed.add_field(name="Winners", value=str(self.winners), inline=True)
+                embed.set_field_at(
+                    2, name="Entries", value=str(len(self.entries)), inline=True
+                )
+                embed.set_field_at(
+                    3, name="Winners", value=str(self.winners), inline=True
+                )
                 embed.set_footer(
                     text=f"Ends at {self.end_time.strftime('%Y-%m-%d %H:%M:%S')} UTC"
                 )
