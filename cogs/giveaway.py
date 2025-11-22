@@ -51,10 +51,6 @@ class JoinGiveawayButton(discord.ui.View):
         now = datetime.utcnow()
         remaining = self.end_time - now
 
-        # keep the existing optimization to avoid editing too often for long giveaways
-        if remaining.total_seconds() > 600 and now.second % 60 != 0:
-            return
-
         if remaining.total_seconds() <= 0:
             self.update_task.cancel()
             self.ended = True
