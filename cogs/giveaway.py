@@ -1,4 +1,3 @@
-from venv import logger
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -7,6 +6,7 @@ import logging
 import random
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("Giveaway")
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
 
 GUILD_ID = discord.Object(id=1422932147550818507)
@@ -51,6 +51,7 @@ class JoinGiveawayButton(discord.ui.View):
         now = datetime.utcnow()
         remaining = self.end_time - now
 
+        # keep the existing optimization to avoid editing too often for long giveaways
         if remaining.total_seconds() > 600 and now.second % 60 != 0:
             return
 
@@ -100,8 +101,9 @@ class JoinGiveawayButton(discord.ui.View):
                     await self.message.channel.send(result_text)
             return
 
-        minutes, seconds = divmod(int(remaining.total_seconds()), 60)
-        time_left = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
+        # Format remaining time similar to polls: use timedelta string (H:MM:SS / D days, H:MM:SS)
+        # This gives outputs like "2:19:03" or "1 day, 2:19:03" and mirrors Polls formatting.
+        time_left = str(remaining).split(".")[0]
 
         embed = discord.Embed(
             title=f"**{self.prize}**",
