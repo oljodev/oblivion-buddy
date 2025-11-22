@@ -101,29 +101,80 @@ class JoinGiveawayButton(discord.ui.View):
                     await self.message.channel.send(result_text)
             return
 
-        # Format remaining time similar to polls: use timedelta string (H:MM:SS / D days, H:MM:SS)
-        # This gives outputs like "2:19:03" or "1 day, 2:19:03" and mirrors Polls formatting.
-        time_left = str(remaining).split(".")[0]
+        # Format remaining time exactly like polls: use timedelta string (H:MM:SS / D days, H:MM:SS)
+        time_str = str(remaining).split(".")[0]
 
-        embed = discord.Embed(
-            title=f"**{self.prize}**",
-            description=self.description,
-            color=discord.Color.green(),
-        )
-        embed.add_field(
-            name="Ends",
-            value=f"in {time_left} (<t:{int(self.end_time.timestamp())}:f>)",
-            inline=False,
-        )
-        embed.add_field(name="Hosted by", value=self.host.mention, inline=True)
-        embed.add_field(name="Entries", value=str(len(self.entries)), inline=True)
-        embed.add_field(name="Winners", value=str(self.winners), inline=True)
-        embed.set_footer(
-            text=f"Ends at {self.end_time.strftime('%Y-%m-%d %H:%M:%S')} UTC"
-        )
+        # If we have an existing message and an embed, update its fields in-place (same approach as Polls)
+        if hasattr(self, "message") and self.message and self.message.embeds:
+            try:
+                embed = self.message.embeds[0]
+                # Update the Ends field (field index 0)
+                embed.set_field_at(
+                    0,
+                    name="Ends",
+                    value=f"in {time_str} (<t:{int(self.end_time.timestamp())}:f>)",
+                    inline=False,
+                )
+                # Update other fields to reflect live values
+                # Hosted by (index 1), Entries (index 2), Winners (index 3)
+                # Guard against unexpected field layout by checking field count
+                if len(embed.fields) >= 2:
+                    embed.set_field_at(
+                        1, name="Hosted by", value=self.host.mention, inline=True
+                    )
+                if len(embed.fields) >= 3:
+                    embed.set_field_at(
+                        2, name="Entries", value=str(len(self.entries)), inline=True
+                    )
+                if len(embed.fields) >= 4:
+                    embed.set_field_at(
+                        3, name="Winners", value=str(self.winners), inline=True
+                    )
 
-        if hasattr(self, "message"):
-            await self.message.edit(embed=embed, view=self)
+                await self.message.edit(embed=embed, view=self)
+            except Exception as e:
+                logger.error(f"⚠️ Failed to update countdown (in-place): {e}")
+                # Fallback to building a fresh embed if in-place update fails
+                embed = discord.Embed(
+                    title=f"**{self.prize}**",
+                    description=self.description,
+                    color=discord.Color.green(),
+                )
+                embed.add_field(
+                    name="Ends",
+                    value=f"in {time_str} (<t:{int(self.end_time.timestamp())}:f>)",
+                    inline=False,
+                )
+                embed.add_field(name="Hosted by", value=self.host.mention, inline=True)
+                embed.add_field(
+                    name="Entries", value=str(len(self.entries)), inline=True
+                )
+                embed.add_field(name="Winners", value=str(self.winners), inline=True)
+                embed.set_footer(
+                    text=f"Ends at {self.end_time.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+                )
+                if hasattr(self, "message"):
+                    await self.message.edit(embed=embed, view=self)
+        else:
+            # No message/embed yet: create a fresh embed (initial send fallback)
+            embed = discord.Embed(
+                title=f"**{self.prize}**",
+                description=self.description,
+                color=discord.Color.green(),
+            )
+            embed.add_field(
+                name="Ends",
+                value=f"in {time_str} (<t:{int(self.end_time.timestamp())}:f>)",
+                inline=False,
+            )
+            embed.add_field(name="Hosted by", value=self.host.mention, inline=True)
+            embed.add_field(name="Entries", value=str(len(self.entries)), inline=True)
+            embed.add_field(name="Winners", value=str(self.winners), inline=True)
+            embed.set_footer(
+                text=f"Ends at {self.end_time.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            )
+            if hasattr(self, "message"):
+                await self.message.edit(embed=embed, view=self)
 
     async def on_timeout(self):
         self.disable_all_buttons()
