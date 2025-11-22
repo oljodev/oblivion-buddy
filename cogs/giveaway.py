@@ -162,12 +162,29 @@ class JoinGiveawayButton(discord.ui.View):
                 description=self.description,
                 color=discord.Color.green(),
             )
-            embed.add_field(
-                name="Ends",
-                value=f"in {time_str} (<t:{int(self.end_time.timestamp())}:f>)",
-                inline=False,
-            )
-            embed.add_field(name="Hosted by", value=self.host.mention, inline=True)
+            if self.message:
+                try:
+                    embed = self.message.embeds[0]
+                    embed.set_field_at(
+                        0,
+                        name="Ends",
+                        value=f"in {str(remaining).split('.')[0]}",
+                        inline=False,
+                    )
+                except Exception as e:
+                    logger.error(f"⚠️ Failed to update countdown (in-place): {e}")
+                    # Fallback to building a fresh embed if in-place update fails
+                    embed = discord.Embed(
+                        title=f"**{self.prize}**",
+                        description=self.description,
+                        color=discord.Color.green(),
+                    )
+                    embed.add_field(
+                        name="Ends",
+                        value=f"in {time_str} (<t:{int(self.end_time.timestamp())}:f>)",
+                        inline=False,
+                    )
+                embed.add_field(name="Hosted by", value=self.host.mention, inline=True)
             embed.add_field(name="Entries", value=str(len(self.entries)), inline=True)
             embed.add_field(name="Winners", value=str(self.winners), inline=True)
             embed.set_footer(
