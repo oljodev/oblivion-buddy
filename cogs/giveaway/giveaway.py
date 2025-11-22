@@ -57,6 +57,7 @@ def add_saved_giveaway(
     winners: int,
     description: str,
     entries: list,
+    places: int,
 ):
     data = load_saved_giveaways()
     data[str(message_id)] = {
@@ -69,6 +70,7 @@ def add_saved_giveaway(
         "winners": winners,
         "description": description,
         "entries": entries,
+        "places": places,
     }
     save_all_giveaways(data)
 
@@ -90,14 +92,20 @@ def remove_saved_giveaway(message_id: int):
 
 
 class JoinGiveawayButton(discord.ui.View):
-    def __init__(self, end_time, host, prize, winners, description):
+    def __init__(self, end_time, host, prize, winners, description, places=1):
         super().__init__(timeout=None)
         self.entries = []
         self.end_time = end_time
         self.host = host
         self.prize = prize
         self.description = description
-        self.winners = winners
+        # winners represents how many top-winners get the main prize;
+        # but if places > 1 we force winners to 1 (as required)
+        self.places = max(1, min(3, int(places or 1)))
+        if self.places > 1:
+            self.winners = 1
+        else:
+            self.winners = int(winners)
         self.update_task = self.update_countdown.start()
 
     def disable_all_buttons(self):
@@ -135,15 +143,42 @@ class JoinGiveawayButton(discord.ui.View):
             self.ended = True
             self.disable_all_buttons()
 
-            # 🎯 Choose winner
+            # 🎯 Choose winner(s) depending on places
+            result_text = ""
             if self.entries:
-                winners = random.sample(
-                    self.entries, min(self.winners, len(self.entries))
-                )
-                winner_mentions = ", ".join(f"<@{uid}>" for uid in winners)
-                result_text = (
-                    f"🎉 Congratulations {winner_mentions}! You won **{self.prize}**!"
-                )
+                if self.places <= 1:
+                    # behave like before: possibly multiple winners for the top prize
+                    top_count = min(self.winners, len(self.entries))
+                    winners = random.sample(self.entries, top_count)
+                    if top_count == 1:
+                        winner_mentions = ", ".join(f"<@{uid}>" for uid in winners)
+                        result_text = f"🎉 Congratulations {winner_mentions}! You won **{self.prize}**!"
+                    else:
+                        winner_mentions = ", ".join(f"<@{uid}>" for uid in winners)
+                        result_text = f"🎉 Congratulations {winner_mentions}! You each won **{self.prize}**!"
+                else:
+                    # Multiple places: First, Second, Third (max 3), distinct winners
+                    place_names = ["First", "Second", "Third"]
+                    count = min(self.places, len(self.entries))
+                    chosen = random.sample(self.entries, count)
+                    lines = []
+                    for idx, uid in enumerate(chosen):
+                        if idx == 0:
+                            # First place — full prize
+                            lines.append(
+                                f"🥇 {place_names[idx]} place — <@{uid}> — won **{self.prize}**"
+                            )
+                        elif idx == 1:
+                            # Second place — runner-up
+                            lines.append(
+                                f"🥈 {place_names[idx]} place — <@{uid}> — won a runner-up prize."
+                            )
+                        else:
+                            # Third place — consolation
+                            lines.append(
+                                f"🥉 {place_names[idx]} place — <@{uid}> — won a consolation prize."
+                            )
+                    result_text = "🎉 Giveaway results:\n" + "\n".join(lines)
             else:
                 result_text = "No one entered the giveaway 😢"
 
@@ -164,7 +199,13 @@ class JoinGiveawayButton(discord.ui.View):
             ended_embed.add_field(
                 name="Entries", value=str(len(self.entries)), inline=True
             )
-            ended_embed.add_field(name="Winners", value=str(self.winners), inline=True)
+            # show places info in embed for clarity
+            ended_embed.add_field(
+                name="Winners",
+                value=str(self.winners)
+                + (f" (places: {self.places})" if self.places > 1 else ""),
+                inline=True,
+            )
             ended_embed.set_footer(text="Giveaway Ended")
 
             if hasattr(self, "message"):
@@ -213,6 +254,7 @@ class JoinGiveawayButton(discord.ui.View):
                     )
 
                 await self.message.edit(embed=embed, view=self)
+
             except Exception as e:
                 logger.error(f"⚠️ Failed to update countdown (in-place): {e}")
                 # Fallback to building a fresh embed if in-place update fails
@@ -248,29 +290,28 @@ class JoinGiveawayButton(discord.ui.View):
                 description=self.description,
                 color=discord.Color.green(),
             )
-            if self.message:
-                try:
-                    embed = self.message.embeds[0]
-                    embed.set_field_at(
-                        0,
-                        name="Ends",
-                        value=f"in {str(remaining).split('.')[0]}",
-                        inline=False,
-                    )
-                except Exception as e:
-                    logger.error(f"⚠️ Failed to update countdown (in-place): {e}")
-                    # Fallback to building a fresh embed if in-place update fails
-                    embed = discord.Embed(
-                        title=f"**{self.prize}**",
-                        description=self.description,
-                        color=discord.Color.green(),
-                    )
-                    embed.add_field(
-                        name="Ends",
-                        value=f"in {time_str} (<t:{int(self.end_time.timestamp())}:f>)",
-                        inline=False,
-                    )
-                embed.add_field(name="Hosted by", value=self.host.mention, inline=True)
+            try:
+                embed = self.message.embeds[0]
+                embed.set_field_at(
+                    0,
+                    name="Ends",
+                    value=f"in {str(remaining).split('.')[0]}",
+                    inline=False,
+                )
+            except Exception as e:
+                logger.error(f"⚠️ Failed to update countdown (in-place): {e}")
+                # Fallback to building a fresh embed if in-place update fails
+                embed = discord.Embed(
+                    title=f"**{self.prize}**",
+                    description=self.description,
+                    color=discord.Color.green(),
+                )
+                embed.add_field(
+                    name="Ends",
+                    value=f"in {time_str} (<t:{int(self.end_time.timestamp())}:f>)",
+                    inline=False,
+                )
+            embed.add_field(name="Hosted by", value=self.host.mention, inline=True)
             embed.add_field(name="Entries", value=str(len(self.entries)), inline=True)
             embed.add_field(name="Winners", value=str(self.winners), inline=True)
             embed.set_footer(
@@ -313,10 +354,10 @@ class GiveawayModal(discord.ui.Modal):
             required=False,
             max_length=500,
         )
-        self.start_time = discord.ui.TextInput(
-            label="Start Time",
-            placeholder="When should the giveaway start? (e.g. now, 2025-12-31 15:00)",
-            required=False,
+        self.places = discord.ui.TextInput(
+            label="First, Second, Third Places",
+            placeholder="Choose between first (1), second (2), third (3) places. ",
+            required=True,
         )
 
         for field in [
@@ -324,7 +365,7 @@ class GiveawayModal(discord.ui.Modal):
             self.duration,
             self.winner_count,
             self.description,
-            self.start_time,
+            self.places,
         ]:
             self.add_item(field)
 
@@ -345,6 +386,34 @@ class GiveawayModal(discord.ui.Modal):
             )
             return
 
+        # parse winner count input
+        try:
+            winner_count_val = int(self.winner_count.value.strip())
+            if winner_count_val < 1:
+                winner_count_val = 1
+        except Exception:
+            await interaction.response.send_message(
+                "Invalid number of winners! Provide a positive integer.", ephemeral=True
+            )
+            return
+
+        # parse places (1-3)
+        try:
+            places_val = int(self.places.value.strip())
+            if places_val < 1:
+                places_val = 1
+            if places_val > 3:
+                places_val = 3
+        except Exception:
+            await interaction.response.send_message(
+                "Invalid places value! Enter 1, 2 or 3.", ephemeral=True
+            )
+            return
+
+        # If user requested multiple places, enforce top-winner count to 1
+        if places_val > 1:
+            winner_count_val = 1
+
         end_time = datetime.utcnow() + timedelta(seconds=seconds)
 
         embed = discord.Embed(
@@ -359,15 +428,16 @@ class GiveawayModal(discord.ui.Modal):
         )
         embed.add_field(name="Hosted by", value=interaction.user.mention, inline=True)
         embed.add_field(name="Entries", value="0", inline=True)
-        embed.add_field(name="Winners", value=self.winner_count.value, inline=True)
+        embed.add_field(name="Winners", value=str(winner_count_val), inline=True)
         embed.set_footer(text=f"Today at {datetime.utcnow().strftime('%H:%M UTC')}")
 
         view = JoinGiveawayButton(
             end_time,
             interaction.user,
             self.prize.value,
-            int(self.winner_count.value),
+            int(winner_count_val),
             self.description.value,
+            places=places_val,
         )
         msg = await interaction.channel.send(embed=embed, view=view)
         view.message = msg
@@ -381,9 +451,10 @@ class GiveawayModal(discord.ui.Modal):
                 end_ts=int(end_time.timestamp()),
                 host_id=interaction.user.id,
                 prize=self.prize.value,
-                winners=int(self.winner_count.value),
+                winners=int(winner_count_val),
                 description=self.description.value or "",
                 entries=[],
+                places=places_val,
             )
         except Exception as e:
             logger.error(f"Failed to persist giveaway: {e}")
@@ -436,9 +507,14 @@ class GiveawayCog(commands.Cog):
                 end_ts = info["end_ts"]
                 host_id = info["host_id"]
                 prize = info["prize"]
-                winners = info["winners"]
+                winners = info.get("winners", 1)
                 description = info.get("description", "")
                 entries = info.get("entries", [])
+                places = int(info.get("places", 1))
+
+                # If restored giveaway had multiple places, ensure winners is 1
+                if places > 1:
+                    winners = 1
 
                 try:
                     channel = self.bot.get_channel(
@@ -467,7 +543,9 @@ class GiveawayCog(commands.Cog):
                     host = message.guild.get_member(host_id) or message.author
 
                 end_time = datetime.utcfromtimestamp(end_ts)
-                view = JoinGiveawayButton(end_time, host, prize, winners, description)
+                view = JoinGiveawayButton(
+                    end_time, host, prize, winners, description, places=places
+                )
                 view.entries = entries
                 view.message = message
 
