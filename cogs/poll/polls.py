@@ -4,6 +4,8 @@ from discord.ext import commands, tasks
 from datetime import datetime, timedelta
 from discord.ui import View, Button, Modal, TextInput
 import logging
+import json
+import os
 
 logger = logging.getLogger("Polls")
 
@@ -11,6 +13,8 @@ GUILD_ID = discord.Object(id=1422932147550818507)
 
 OWNER_ROLE_ID = 1422933406873813254
 ADMIN_ROLE_ID = 1422937935988265090
+
+POLL_STATE_FILE = "/home/olav/dev/oblivion-buddy/cogs/poll/poll_state.json"
 
 
 # ------------------------- Modal for creating poll -------------------------
@@ -93,7 +97,10 @@ class PollModal(Modal):
         poll_message = await interaction.channel.send(embed=embed, view=view)
         view.message = poll_message
 
-        await self.poll_cog.create_poll_thread(poll_message, question)
+        # Pass end_time and creator id so we can persist the poll state
+        await self.poll_cog.create_poll_thread(
+            poll_message, question, end_time, interaction.user.id
+        )
 
         logger.info(f"Poll created by {self.creator}: {question}")
 
@@ -218,6 +225,14 @@ class PollView(View):
                     await self.message.edit(embed=ended_embed, view=self)
             except Exception as e:
                 logger.error(f"⚠️ Failed to edit message: {e}")
+
+            # remove persisted state now that poll ended
+            try:
+                if self.message:
+                    await self.poll_cog.remove_poll_state(self.message.id)
+            except Exception as e:
+                logger.error(f"⚠️ Failed to remove poll state: {e}")
+
             return
 
         if self.message:
@@ -268,7 +283,13 @@ class Polls(commands.Cog):
         modal = PollModal(self, interaction.user)
         await interaction.response.send_modal(modal)
 
-    async def create_poll_thread(self, poll_message: discord.Message, question: str):
+    async def create_poll_thread(
+        self,
+        poll_message: discord.Message,
+        question: str,
+        end_time: datetime,
+        creator_id: int,
+    ):
         """Create a private thread for text answers visible only to OWNER/ADMIN"""
         channel = poll_message.channel
         guild = poll_message.guild
@@ -296,6 +317,20 @@ class Polls(commands.Cog):
         self.poll_threads[poll_message.id] = thread
         # initialize vote count
         self.poll_votes[poll_message.id] = 0
+
+        # Persist poll state so we can restore after restart
+        state = self._load_state()
+        state[str(poll_message.id)] = {
+            "guild_id": guild.id,
+            "channel_id": channel.id,
+            "thread_id": thread.id,
+            "end_timestamp": int(end_time.timestamp()),
+            "question": question,
+            "creator_id": creator_id,
+            "votes": 0,
+        }
+        self._save_state(state)
+
         logger.info(f"Private poll thread created for message {poll_message.id}")
         return thread
 
@@ -318,6 +353,16 @@ class Polls(commands.Cog):
         # increment stored vote count
         self.poll_votes[poll_message.id] = self.poll_votes.get(poll_message.id, 0) + 1
 
+        # update persisted vote count
+        try:
+            state = self._load_state()
+            entry = state.get(str(poll_message.id))
+            if entry:
+                entry["votes"] = self.poll_votes[poll_message.id]
+                self._save_state(state)
+        except Exception as e:
+            logger.error(f"⚠️ Failed to persist vote count: {e}")
+
         # update the poll embed's Votes field (index 1)
         try:
             embed = poll_message.embeds[0]
@@ -339,6 +384,114 @@ class Polls(commands.Cog):
             )
             logger.error(f"Poll command error: {error}")
 
+    # --- persistence helpers ---
+    def _load_state(self):
+        try:
+            if not os.path.exists(POLL_STATE_FILE):
+                return {}
+            with open(POLL_STATE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"⚠️ Failed to load poll state: {e}")
+            return {}
+
+    def _save_state(self, state: dict):
+        try:
+            dirpath = os.path.dirname(POLL_STATE_FILE)
+            if dirpath and not os.path.exists(dirpath):
+                os.makedirs(dirpath, exist_ok=True)
+            with open(POLL_STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+        except Exception as e:
+            logger.error(f"⚠️ Failed to save poll state: {e}")
+
+    async def remove_poll_state(self, message_id: int):
+        state = self._load_state()
+        if str(message_id) in state:
+            del state[str(message_id)]
+            self._save_state(state)
+        # cleanup mappings if present
+        self.poll_votes.pop(message_id, None)
+        self.poll_threads.pop(message_id, None)
+
+    async def restore_polls_from_state(self):
+        """Attempt to reattach views to saved poll messages on startup."""
+        state = self._load_state()
+        if not state:
+            return
+
+        for msg_id_str, entry in state.items():
+            try:
+                msg_id = int(msg_id_str)
+                guild = self.bot.get_guild(entry["guild_id"])
+                if not guild:
+                    logger.warning(
+                        f"Guild {entry['guild_id']} not in cache; skipping poll {msg_id}"
+                    )
+                    continue
+                channel = guild.get_channel(entry["channel_id"])
+                if not channel:
+                    logger.warning(
+                        f"Channel {entry['channel_id']} not found; skipping poll {msg_id}"
+                    )
+                    continue
+                try:
+                    poll_message = await channel.fetch_message(msg_id)
+                except Exception:
+                    logger.warning(f"Could not fetch message {msg_id}; skipping.")
+                    continue
+
+                end_time = datetime.utcfromtimestamp(entry["end_timestamp"])
+                # If already ended, remove state
+                if end_time <= datetime.utcnow():
+                    await self.remove_poll_state(msg_id)
+                    continue
+
+                # attempt to resolve creator member
+                creator = (
+                    guild.get_member(entry.get("creator_id"))
+                    if entry.get("creator_id")
+                    else None
+                )
+
+                # description: try to pull from embed
+                description = ""
+                try:
+                    description = poll_message.embeds[0].description or ""
+                except Exception:
+                    description = ""
+
+                # recreate view and attach
+                view = PollView(
+                    self,
+                    end_time,
+                    creator or self.bot.user,
+                    entry.get("question", ""),
+                    description,
+                )
+                view.message = poll_message
+                # restore vote count and thread mapping if possible
+                self.poll_votes[poll_message.id] = entry.get("votes", 0)
+                thread_obj = guild.get_channel(entry.get("thread_id"))
+                if thread_obj:
+                    self.poll_threads[poll_message.id] = thread_obj
+
+                # attach view to message so the loop updates it
+                try:
+                    await poll_message.edit(view=view)
+                except Exception:
+                    # editing might fail but view will still run updating; log and continue
+                    logger.warning(f"Failed to reattach view to message {msg_id}")
+                logger.info(f"Restored poll view for message {msg_id}")
+            except Exception as e:
+                logger.error(f"⚠️ Error restoring poll {msg_id_str}: {e}")
+
 
 async def setup(bot):
-    await bot.add_cog(Polls(bot))
+    cog = Polls(bot)
+    await bot.add_cog(cog)
+    # try to restore active polls from persisted state
+    try:
+        await cog.restore_polls_from_state()
+    except Exception as e:
+        logger.error(f"⚠️ Failed to restore polls from state: {e}")
