@@ -195,13 +195,6 @@ class PollView(View):
         now = datetime.utcnow()
         remaining = self.end_time - now
 
-        if remaining.total_seconds() > 600:
-            try:
-                self.update_countdown.change_interval(seconds=10)
-            except Exception:
-                pass
-            return
-
         if remaining.total_seconds() <= 1:
             self.update_task.cancel()
             self.ended = True
