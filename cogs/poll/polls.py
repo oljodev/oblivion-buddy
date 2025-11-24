@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
 from discord.ui import View, Button, Modal, TextInput
+import asyncio
 import logging
 import json
 import os
@@ -193,6 +194,13 @@ class PollView(View):
         # Update embed every second
         now = datetime.utcnow()
         remaining = self.end_time - now
+
+        if remaining.total_seconds() > 600:
+            try:
+                self.update_countdown.change_interval(seconds=10)
+            except Exception:
+                pass
+            return
 
         if remaining.total_seconds() <= 1:
             self.update_task.cancel()
