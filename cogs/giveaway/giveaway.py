@@ -129,7 +129,8 @@ class JoinGiveawayButton(discord.ui.View):
             except Exception as e:
                 logger.error(f"Failed to update saved entries: {e}")
             await interaction.response.send_message(
-                "You joined the giveaway! 🎉", ephemeral=True
+                "You joined the giveaway! 🎉 Wait 1 Minute and the Enteries number will change!",
+                ephemeral=True,
             )
 
     @tasks.loop(seconds=1)
@@ -137,6 +138,34 @@ class JoinGiveawayButton(discord.ui.View):
         # Update embed every second
         now = datetime.utcnow()
         remaining = self.end_time - now
+
+        if remaining.total_seconds() > 600:
+            try:
+                self.update_countdown.change_interval(seconds=60)
+
+            except Exception:
+                pass
+            try:
+                embed = self.message.embeds[0]
+                embed.set_field_at(
+                    0,
+                    name="Ends",
+                    value=f"in {str(remaining).split('.')[0]}",
+                    inline=False,
+                )
+                embed.set_field_at(
+                    2, name="Entries", value=str(len(self.entries)), inline=True
+                )
+                await self.message.edit(embed=embed, view=self)
+            except Exception as e:
+                logger.error(f"⚠️ Failed to update countdown (minute interval): {e}")
+            return
+
+        else:
+            try:
+                self.update_countdown.change_interval(seconds=1)
+            except Exception:
+                pass
 
         if remaining.total_seconds() <= 0:
             self.update_task.cancel()
