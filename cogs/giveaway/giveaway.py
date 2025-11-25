@@ -167,7 +167,7 @@ class JoinGiveawayButton(discord.ui.View):
             except Exception:
                 pass
 
-        if remaining.total_seconds() <= 0:
+        if remaining.total_seconds() <= 10:
             self.update_task.cancel()
             self.ended = True
             self.disable_all_buttons()

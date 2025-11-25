@@ -223,7 +223,7 @@ class PollView(View):
             except Exception:
                 pass
 
-        if remaining.total_seconds() <= 1:
+        if remaining.total_seconds() <= 10:
             self.update_task.cancel()
             self.ended = True
             self.disable_all_buttons()
