@@ -14,7 +14,7 @@ GUILD_ID = discord.Object(id=1422932147550818507)
 OWNER_ROLE_ID = 1422933406873813254
 ADMIN_ROLE_ID = 1422937935988265090
 
-POLL_STATE_FILE = "/home/olav/dev/oblivion-buddy/cogs/poll/poll_state.json"
+POLL_STATE_FILE = "/home/olav/dev/oblivion-buddy/cogs/poll/polls.json"
 
 
 # ------------------------- Modal for creating poll -------------------------
@@ -421,31 +421,52 @@ class Polls(commands.Cog):
         if not state:
             return
 
-        for msg_id_str, entry in state.items():
+        keys_to_remove = []
+
+        for msg_id_str, entry in list(state.items()):
             try:
                 msg_id = int(msg_id_str)
                 guild = self.bot.get_guild(entry["guild_id"])
+                # If guild not in cache, treat as missing and remove the saved poll
                 if not guild:
                     logger.warning(
-                        f"Guild {entry['guild_id']} not in cache; skipping poll {msg_id}"
+                        f"Guild {entry['guild_id']} not in cache; removing poll {msg_id} from state"
                     )
+                    keys_to_remove.append(msg_id_str)
+                    # cleanup in-memory maps
+                    self.poll_votes.pop(msg_id, None)
+                    self.poll_threads.pop(msg_id, None)
                     continue
+
                 channel = guild.get_channel(entry["channel_id"])
+                # If channel not found, remove saved poll
                 if not channel:
                     logger.warning(
-                        f"Channel {entry['channel_id']} not found; skipping poll {msg_id}"
+                        f"Channel {entry['channel_id']} not found; removing poll {msg_id} from state"
                     )
+                    keys_to_remove.append(msg_id_str)
+                    self.poll_votes.pop(msg_id, None)
+                    self.poll_threads.pop(msg_id, None)
                     continue
+
                 try:
                     poll_message = await channel.fetch_message(msg_id)
                 except Exception:
-                    logger.warning(f"Could not fetch message {msg_id}; skipping.")
+                    logger.warning(
+                        f"Could not fetch message {msg_id}; removing from state."
+                    )
+                    keys_to_remove.append(msg_id_str)
+                    self.poll_votes.pop(msg_id, None)
+                    self.poll_threads.pop(msg_id, None)
                     continue
 
                 end_time = datetime.utcfromtimestamp(entry["end_timestamp"])
-                # If already ended, remove state
+                # If already ended, remove state (but keep embed in Discord)
                 if end_time <= datetime.utcnow():
-                    await self.remove_poll_state(msg_id)
+                    logger.info(f"Poll {msg_id} already ended; removing from state.")
+                    keys_to_remove.append(msg_id_str)
+                    self.poll_votes.pop(msg_id, None)
+                    self.poll_threads.pop(msg_id, None)
                     continue
 
                 # attempt to resolve creator member
@@ -486,6 +507,18 @@ class Polls(commands.Cog):
                 logger.info(f"Restored poll view for message {msg_id}")
             except Exception as e:
                 logger.error(f"⚠️ Error restoring poll {msg_id_str}: {e}")
+
+        # Remove any stale entries found and persist the cleaned state
+        if keys_to_remove:
+            for k in keys_to_remove:
+                state.pop(k, None)
+            try:
+                self._save_state(state)
+                logger.info(
+                    f"Removed {len(keys_to_remove)} stale poll entries from state"
+                )
+            except Exception as e:
+                logger.error(f"⚠️ Failed to persist cleaned poll state: {e}")
 
 
 async def setup(bot):
