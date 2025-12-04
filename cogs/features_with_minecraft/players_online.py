@@ -252,5 +252,5 @@ class PlayersOnline(commands.Cog):
         await self.bot.wait_until_ready()
 
 
-def setup(bot):
-    bot.add_cog(PlayersOnline(bot))
+async def setup(bot):
+    await bot.add_cog(PlayersOnline(bot))

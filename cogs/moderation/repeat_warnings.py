@@ -26,12 +26,29 @@ class RepeatWarnings(commands.Cog):
     @tasks.loop(minutes=2)
     async def check_warnings(self):
         """Checks all users' warnings and applies a timeout if necessary."""
+
+        # 1. Sjekk om filen eksisterer. Hvis ikke, er det ingenting å gjøre.
         if not WARNINGS_FILE.exists():
+            # For å sikre at filen opprettes ved første warning, kan du opprette den her
+            # men for en bakgrunnstaske er det trygt å bare returnere.
             return
 
-        with open(WARNINGS_FILE) as f:
-            data = json.load(f)
+        # 2. LES FILEN SIKKERT
+        data = {}
+        try:
+            with open(WARNINGS_FILE, "r") as f:
+                data = json.load(f)
 
+        # Håndter tom eller ugyldig JSON-fil. Dette var feilen din.
+        except json.JSONDecodeError:
+            print("⚠️ WARNINGS_FILE er tom eller skadet. Starter med tom data.")
+            # Data forblir {} og loopen under hopper over.
+            return
+        except Exception as e:
+            print(f"⚠️ Kritisk feil ved lesing av warnings.json: {e}")
+            return
+
+        # 3. BEHANDLE DATA (Uendret logikk)
         for user_id, reasons in data.items():
             if len(reasons) >= 3:
                 for guild in self.bot.guilds:

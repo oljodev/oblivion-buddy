@@ -16,14 +16,16 @@ logger = logging.getLogger(__name__)
 
 
 # --- Bot Initialisering ---
-intents = discord.Intents.default()
 
+# 1. Definer Intents riktig. Vi bruker Intents.default() og legger til de privilegerte vi trenger.
+intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+
+
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 GUILD_ID = discord.Object(id=1422932147550818507)
-
 
 MEMBER_ROLE_ID = 1422937958897422406
 
@@ -54,6 +56,11 @@ async def help_command_for_users(interaction: discord.Interaction):
 
 async def load_cogs(bot: commands.Bot, logger: logging.Logger):
     cogs_path = "./cogs"
+
+    # Sørg for at cogs-mappen eksisterer
+    if not os.path.exists(cogs_path):
+        logger.error(f"❌ Cogs folder not found at {cogs_path}")
+        return
 
     for filename in os.listdir(cogs_path):
         full_path = os.path.join(cogs_path, filename)
@@ -90,15 +97,23 @@ async def load_cogs(bot: commands.Bot, logger: logging.Logger):
 
 @bot.event
 async def on_ready():
-    print(f"✅ Logged in as {bot.user}")
+    # Sørg for at boten er klar før vi logger
+    await bot.wait_until_ready()
+    print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
 
     # 2. Kall opp setup-funksjonene i Cogs som må kjøres etter on_ready
     if bot.get_cog("Tickets"):
-        await bot.get_cog("Tickets").on_ready_setup()
+        try:
+            # Sjekk om metoden finnes FØR vi kaller den
+            if hasattr(bot.get_cog("Tickets"), "on_ready_setup"):
+                await bot.get_cog("Tickets").on_ready_setup()
+        except Exception as e:
+            print(f"Error calling Tickets on_ready_setup: {e}")
 
     # 3. Sync kommandoer til en spesifikk guild (server)
     try:
         guild = discord.Object(id=1422932147550818507)
+        # Bruk bot.tree.copy_global_to(guild=guild) hvis du har globale kommandoer du vil teste
         synced = await bot.tree.sync(guild=guild)
         print(f"Synced {len(synced)} commands to the guild {guild.id}.")
 
