@@ -268,7 +268,7 @@ class TicketPanel(discord.ui.View):
         try:
             thread = await target_channel.create_thread(
                 name=f"Ticket-{interaction.user.name}",
-                type=discord.ChannelType.public_thread,
+                type=discord.ChannelType.private_thread,
             )
         except Exception as e:
             await interaction.followup.send(
