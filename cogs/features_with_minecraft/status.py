@@ -54,9 +54,6 @@ class ServerStatusCog(commands.Cog):
                 parts = text.split(":")
                 if len(parts) > 1:
                     player_names = [p.strip() for p in parts[1].split(",") if p.strip()]
-                if "There are" in text and "of a max of" in text:
-                    player_count = int(text.split("There are ")[1].split(" of")[0])
-                    max_players = int(text.split("of a max of ")[1].split(" ")[0])
             except Exception:
                 player_names = []
                 player_count = 0
