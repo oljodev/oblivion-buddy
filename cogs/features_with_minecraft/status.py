@@ -2,16 +2,34 @@ import discord
 from discord.ext import commands, tasks
 from aiomcrcon import Client
 import os
+import re
 from datetime import datetime
 
 RCON_IP = os.getenv("RCON_IP", "localhost")
-RCON_PORT = os.getenv("RCON_PORT", 25575)
+RCON_PORT = int(os.getenv("RCON_PORT", 25575))
 RCON_PASS = os.getenv("RCON_PASS", "secret")
 
 STATUS_CHANNEL_ID = 1422934996976402442
 SERVER_NAME = "Oblivion SMP"
 
-status_message = None
+# Keywords that should be filtered out from the player list
+FILTER_WORDS = {
+    "there",
+    "are",
+    "of",
+    "a",
+    "max",
+    "players",
+    "online",
+    "server",
+    "info",
+    "list",
+    "connected",
+    "status",
+    "currently",
+    "player",
+    "available",
+}
 
 
 class ServerStatusCog(commands.Cog):
@@ -49,12 +67,66 @@ class ServerStatusCog(commands.Cog):
 
         if is_online and response:
             try:
-                # Eksempelrespons: "There are 1 of a max of 20 players online: username"
                 text = response[0] if isinstance(response, tuple) else response
-                parts = text.split(":")
-                if len(parts) > 1:
-                    player_names = [p.strip() for p in parts[1].split(",") if p.strip()]
-            except Exception:
+
+                # Use regex to isolate the section containing the count and the names
+                # This helps skip multi-line or non-standard prefix data
+
+                # 1. EXTRACT NUMBERS (Current & Max)
+                # Look for the standard phrase "X of a max of Y players"
+                count_match = re.search(
+                    r"(\d+)\s+of\s+a\s+max\s+of\s+(\d+)", text, re.IGNORECASE
+                )
+
+                if count_match:
+                    player_count = int(count_match.group(1))
+                    max_players = int(count_match.group(2))
+
+                # Fallback: find any two numbers, usually "X/Y" or "X out of Y"
+                elif not count_match:
+                    numbers = re.findall(r"\d+", text)
+                    if len(numbers) >= 2:
+                        # We can't be sure which is which, but this is a reasonable guess for fallback
+                        player_count = int(numbers[0])
+                        max_players = int(numbers[1])
+
+                # 2. EXTRACT NAMES
+                # Find the names list, which always follows "online:" or just ends the string
+
+                # Try to capture the list after "online:"
+                names_match = re.search(r"online:?\s*(.*)", text, re.IGNORECASE)
+
+                raw_names_str = ""
+                if names_match:
+                    # Captures everything after "online:"
+                    raw_names_str = names_match.group(1).strip()
+                else:
+                    # If "online:" wasn't found (e.g., 0 players), use the whole string as a fallback
+                    # and rely on the filter below to clean it.
+                    raw_names_str = text.strip()
+
+                # Clean and filter tokens
+                tokens = re.split(r"[,\s\n]+", raw_names_str)
+                cleaned_names = []
+                for t in tokens:
+                    clean_t = re.sub(r"[^A-Za-z0-9_]+", "", t).strip()
+                    if (
+                        3
+                        <= len(clean_t)
+                        <= 16  # Valid name length check (3-16 standard)
+                        and clean_t.lower() not in FILTER_WORDS  # Exclude common words
+                        and not re.search(
+                            r"^\d+$", clean_t
+                        )  # Exclude pure numbers/timestamps
+                        and clean_t.lower() != SERVER_NAME.lower()
+                    ):  # Exclude the server name itself
+                        cleaned_names.append(clean_t)
+
+                # Keep only unique names
+                player_names = sorted(list(set(cleaned_names)), key=str.lower)
+
+            except Exception as e:
+                print(f"Error parsing status: {e}")
                 player_names = []
                 player_count = 0
 
@@ -71,6 +143,7 @@ class ServerStatusCog(commands.Cog):
 
         embed.add_field(name="📡 Status", value=status_text, inline=True)
         embed.add_field(name="🌐 IP", value=f"`{RCON_IP}`", inline=True)
+
         embed.add_field(
             name="👥 Players",
             value=f"{player_count}/{max_players}" if is_online else "0/0",
@@ -79,9 +152,14 @@ class ServerStatusCog(commands.Cog):
 
         if is_online:
             if player_names:
+                display_names = player_names[:20]
+                names_str = "\n".join(display_names)
+                if len(player_names) > 20:
+                    names_str += f"\n...and {len(player_names) - 20} more"
+
                 embed.add_field(
                     name="🧍 Player List",
-                    value="\n".join(player_names[:20]),
+                    value=names_str,
                     inline=False,
                 )
             else:
@@ -103,21 +181,23 @@ class ServerStatusCog(commands.Cog):
                     break
 
         if self.status_message:
-            await self.status_message.edit(embed=embed)
+            try:
+                await self.status_message.edit(embed=embed)
+            except discord.NotFound:
+                self.status_message = await channel.send(embed=embed)
         else:
             self.status_message = await channel.send(embed=embed)
 
-        # --- OPPDATER KANALNAVN ---
-        new_name = f"{icon}│{status_text.lower()}"
-        if channel.name != new_name:
-            try:
-                await channel.edit(name=new_name)
-                self.last_status = new_name
-                print(f"✅ Updated channel name to {new_name}")
-            except discord.Forbidden:
-                print("⚠️ Missing permission to change channel name.")
-            except Exception as e:
-                print(f"⚠️ Error changing channel name: {e}")
+        # --- OPPDATER BOT STATUS (ACTIVITY) ---
+        if is_online:
+            activity_name = f"{SERVER_NAME} with {player_count} players"
+            activity = discord.Game(name=activity_name)
+            await self.bot.change_presence(activity=activity)
+        else:
+            activity = discord.CustomActivity(name="Server Offline")
+            await self.bot.change_presence(
+                status=discord.Status.idle, activity=activity
+            )
 
     @update_status.before_loop
     async def before_update_status(self):
