@@ -60,7 +60,7 @@ ADMIN_ROLE_ID = 1422937935988265090
 HELPER_ROLE_ID = 1422937956959785040
 
 # --- AI stuff ---
-GEMINI_API_KEY = "AIzaSyACJGrfqL5GVMABDc8s7ISLsjpQf-E1mZI"
+GEMINI_API_KEY = "AIzaSyAkicIsJhMkw9MW-iJYGoJTwWWCzg1HKXQ"
 MODEL = "gemini-2.0-flash"
 URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={GEMINI_API_KEY}"
 
