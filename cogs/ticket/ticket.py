@@ -242,12 +242,18 @@ class Tickets(commands.Cog):
         embed = discord.Embed(
             title="Need Help, Support or Assistance?",
             description=(
-                "Click the button below to start! You will be asked to select a category and fill out a short form so our staff can help you faster.\n\n"
-                "**Common Reasons:**\n"
-                "- 🛡️ **Reporting Players:** Stealing/Griefing\n"
-                "- ⚙️ **Technical:** Bug reports or lag issues\n"
-                "- ❓ **General:** Questions and help\n\n"
-                "**Staff will be notified immediately after you submit the form!**"
+                "Click the button below to open a private ticket. Our admins and helpers will be notified and ready to assist you!\n\n"
+                "**When to create a ticket:**\n"
+                "- Questions about the server or mods\n"
+                "- Bugs, exploits, or technical issues\n"
+                "- General question to the staff team\n"
+                "- Help with other players or gameplay concerns\n\n"
+                "**Why use a ticket?**\n"
+                "- Private and faster support\n"
+                "- Keeps public channels clean\n"
+                "- Staff can track and solve issues efficiently\n\n"
+                "**Don’t worry!**\n"
+                "It’s always better to open a ticket than ping staff in public channels. We’re here to help!"
             ),
             color=discord.Color.dark_blue(),
         )
