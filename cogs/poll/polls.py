@@ -1,11 +1,12 @@
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 from datetime import datetime, timedelta
 from discord.ui import View, Button, Modal, TextInput
 import logging
 import json
 import os
+import asyncio
 
 logger = logging.getLogger("Polls")
 
@@ -67,6 +68,7 @@ class PollModal(Modal):
             return
 
         end_time = datetime.utcnow() + timedelta(seconds=seconds)
+        end_ts = int(end_time.timestamp())
 
         question = self.question.value.strip()
         description = self.description.value.strip()
@@ -77,9 +79,10 @@ class PollModal(Modal):
             color=discord.Color.blurple(),
         )
 
+        # Integrated HammerTime here
         embed.add_field(
             name="Ends",
-            value=f"in {dur_text} (<t:{int(end_time.timestamp())}:f>)",
+            value=f"<t:{end_ts}:R> (<t:{end_ts}:f>)",
             inline=False,
         )
         embed.add_field(name="Votes", value="0", inline=True)
@@ -90,14 +93,11 @@ class PollModal(Modal):
             self.poll_cog, end_time, interaction.user, question, description
         )
 
-        # Send ephemeral response first
         await interaction.response.send_message("✅ Poll created!", ephemeral=True)
 
-        # Send poll embed to channel once and store it on the view
         poll_message = await interaction.channel.send(embed=embed, view=view)
         view.message = poll_message
 
-        # Pass end_time and creator id so we can persist the poll state
         await self.poll_cog.create_poll_thread(
             poll_message, question, end_time, interaction.user.id
         )
@@ -138,14 +138,16 @@ class TextResponseModal(Modal):
     async def on_submit(self, interaction: discord.Interaction):
         answer = self.response.value.strip()
         description = self.description.value.strip()
+
         await self.poll_cog.send_response_to_poll_thread(
             self.responder,
             self.question,
             f"\n\n**{answer}\n**{description}",
             self.poll_message,
         )
+
         await interaction.response.send_message(
-            "✅ Your answer has been submitted! Wait 1 Minute and the Vote number will change!",
+            "✅ Your answer has been submitted!",
             ephemeral=True,
         )
         logger.info(f"{self.responder} submitted text answer")
@@ -167,21 +169,24 @@ class PollView(View):
         self.question = question
         self.description = description
         self.end_time = end_time
-        self.update_task = self.update_countdown.start()
-
-        # Keep reference to the message this view is attached to
+        self.ended = False
         self.message = None
 
         text_button = Button(label="📝 Send Answer", style=discord.ButtonStyle.primary)
         text_button.callback = self.text_answer
         self.add_item(text_button)
 
-        self.votes = {}
+        # Start the finish task instead of a 1-second loop
+        self.finish_task = asyncio.create_task(self.wait_for_end())
 
     async def text_answer(self, interaction: discord.Interaction):
-        poll_message = interaction.message
+        if self.ended:
+            return await interaction.response.send_message(
+                "This poll has already ended.", ephemeral=True
+            )
+
         modal = TextResponseModal(
-            self.poll_cog, self.question, interaction.user, poll_message
+            self.poll_cog, self.question, interaction.user, self.message
         )
         await interaction.response.send_modal(modal)
 
@@ -189,72 +194,52 @@ class PollView(View):
         for item in self.children:
             item.disabled = True
 
-    @tasks.loop(seconds=1)
-    async def update_countdown(self):
-        # Update embed every second
+    async def wait_for_end(self):
+        """Waits until the end_time to finalize the poll."""
         now = datetime.utcnow()
-        remaining = self.end_time - now
+        delay = (self.end_time - now).total_seconds()
 
-        if remaining.total_seconds() <= 10:
-            self.update_task.cancel()
-            self.ended = True
-            self.disable_all_buttons()
+        if delay > 0:
+            await asyncio.sleep(delay)
 
-            # ⚙️ Updated embed (gray and ended)
-            ended_embed = discord.Embed(
-                title=f"**{self.question}**",
-                description="This poll has ended.",
-                color=discord.Color.from_rgb(128, 128, 128),
-            )
-            ended_embed.add_field(
-                name="Ended",
-                value=f"<t:{int(self.end_time.timestamp())}:f>",
-                inline=False,
-            )
-            # Use poll_cog.poll_votes instead of self.votes length
-            votes_count = 0
-            if self.message:
-                votes_count = self.poll_cog.poll_votes.get(self.message.id, 0)
-            ended_embed.add_field(name="Votes", value=str(votes_count), inline=True)
-            ended_embed.add_field(
-                name="Hosted by", value=self.creator.mention, inline=True
-            )
-            ended_embed.set_footer(text="Poll Ended")
+        await self.finalize_poll()
 
-            try:
-                if self.message:
-                    await self.message.edit(embed=ended_embed, view=self)
-            except Exception as e:
-                logger.error(f"⚠️ Failed to edit message: {e}")
-
-            # remove persisted state now that poll ended
-            try:
-                if self.message:
-                    await self.poll_cog.remove_poll_state(self.message.id)
-            except Exception as e:
-                logger.error(f"⚠️ Failed to remove poll state: {e}")
-
+    async def finalize_poll(self):
+        """Disables buttons, changes color to gray, and saves final state."""
+        if self.ended:
             return
+        self.ended = True
+        self.disable_all_buttons()
 
-        if self.message:
-            try:
-                embed = self.message.embeds[0]
-                embed.set_field_at(
-                    0,
-                    name="Ends",
-                    value=f"in {str(remaining).split('.')[0]}",
-                    inline=False,
-                )
-                # update votes from poll_cog.poll_votes
-                votes_count = self.poll_cog.poll_votes.get(self.message.id, 0)
-                embed.set_field_at(1, name="Votes", value=str(votes_count), inline=True)
-                await self.message.edit(embed=embed, view=self)
-            except Exception as e:
-                logger.error(f"⚠️ Failed to update countdown: {e}")
+        # Update embed to gray (ended state)
+        ended_embed = discord.Embed(
+            title=f"**{self.question}**",
+            description="This poll has ended.",
+            color=discord.Color.dark_gray(),
+        )
+        ended_embed.add_field(
+            name="Ended",
+            value=f"<t:{int(self.end_time.timestamp())}:f>",
+            inline=False,
+        )
+
+        votes_count = (
+            self.poll_cog.poll_votes.get(self.message.id, 0) if self.message else 0
+        )
+        ended_embed.add_field(name="Votes", value=str(votes_count), inline=True)
+        ended_embed.add_field(name="Hosted by", value=self.creator.mention, inline=True)
+        ended_embed.set_footer(text="Poll Ended")
+
+        try:
+            if self.message:
+                await self.message.edit(embed=ended_embed, view=self)
+                await self.poll_cog.remove_poll_state(self.message.id)
+        except Exception as e:
+            logger.error(f"⚠️ Failed to finalize poll: {e}")
 
     async def on_timeout(self):
         self.disable_all_buttons()
-        if hasattr(self, "message"):
+        if hasattr(self, "message") and self.message:
             await self.message.edit(view=self)
 
 
@@ -263,17 +248,13 @@ class Polls(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.poll_threads = {}
-        # track votes per poll message id
         self.poll_votes = {}
         logger.info("Polls Cog initialized")
 
     @app_commands.command(name="poll", description="Create a new poll")
     @app_commands.guilds(GUILD_ID)
     async def poll(self, interaction: discord.Interaction):
-        allowed_roles = [
-            OWNER_ROLE_ID,
-            ADMIN_ROLE_ID,
-        ]
+        allowed_roles = [OWNER_ROLE_ID, ADMIN_ROLE_ID]
 
         if not any(role.id in allowed_roles for role in interaction.user.roles):
             await interaction.response.send_message(
@@ -291,18 +272,15 @@ class Polls(commands.Cog):
         end_time: datetime,
         creator_id: int,
     ):
-        """Create a private thread for text answers visible only to OWNER/ADMIN"""
         channel = poll_message.channel
         guild = poll_message.guild
 
-        # Lag privat thread fra kanalen
         thread = await channel.create_thread(
             name=f"Poll Answers - {question}",
             auto_archive_duration=1440,
             type=discord.ChannelType.private_thread,
         )
 
-        # Ping owner/admin i første melding
         mentions = []
         for role_id in [OWNER_ROLE_ID, ADMIN_ROLE_ID]:
             role = guild.get_role(role_id)
@@ -311,15 +289,12 @@ class Polls(commands.Cog):
 
         if mentions:
             await thread.send(
-                f"⚠️ Private poll thread started for text answers for question **{question}**. {', '.join(mentions)}"
+                f"⚠️ Private poll thread started for answers on question: **{question}**. {', '.join(mentions)}"
             )
 
-        # Lagre mapping mellom poll_message og thread
         self.poll_threads[poll_message.id] = thread
-        # initialize vote count
         self.poll_votes[poll_message.id] = 0
 
-        # Persist poll state so we can restore after restart
         state = self._load_state()
         state[str(poll_message.id)] = {
             "guild_id": guild.id,
@@ -348,13 +323,12 @@ class Polls(commands.Cog):
             logger.error(f"No thread found for poll message ID {poll_message.id}")
             return
 
-        # Send plain message
         await thread.send(f"User {user.display_name} sent this: {answer}")
 
-        # increment stored vote count
+        # Update vote count in-memory
         self.poll_votes[poll_message.id] = self.poll_votes.get(poll_message.id, 0) + 1
 
-        # update persisted vote count
+        # Persist vote count
         try:
             state = self._load_state()
             entry = state.get(str(poll_message.id))
@@ -364,7 +338,7 @@ class Polls(commands.Cog):
         except Exception as e:
             logger.error(f"⚠️ Failed to persist vote count: {e}")
 
-        # update the poll embed's Votes field (index 1)
+        # Instantly update the embed Votes field (index 1)
         try:
             embed = poll_message.embeds[0]
             votes_count = self.poll_votes[poll_message.id]
@@ -373,19 +347,6 @@ class Polls(commands.Cog):
         except Exception as e:
             logger.error(f"⚠️ Failed to update poll message votes: {e}")
 
-    @poll.error
-    async def poll_error(self, interaction: discord.Interaction, error):
-        if isinstance(error, app_commands.errors.MissingPermissions):
-            await interaction.response.send_message(
-                "❌ You need administrator permissions to create polls.", ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                "⚠️ Something went wrong while creating the poll.", ephemeral=True
-            )
-            logger.error(f"Poll command error: {error}")
-
-    # --- persistence helpers ---
     def _load_state(self):
         try:
             if not os.path.exists(POLL_STATE_FILE):
@@ -411,120 +372,60 @@ class Polls(commands.Cog):
         if str(message_id) in state:
             del state[str(message_id)]
             self._save_state(state)
-        # cleanup mappings if present
         self.poll_votes.pop(message_id, None)
         self.poll_threads.pop(message_id, None)
 
     async def restore_polls_from_state(self):
-        """Attempt to reattach views to saved poll messages on startup."""
         state = self._load_state()
         if not state:
             return
-
-        keys_to_remove = []
 
         for msg_id_str, entry in list(state.items()):
             try:
                 msg_id = int(msg_id_str)
                 guild = self.bot.get_guild(entry["guild_id"])
-                # If guild not in cache, treat as missing and remove the saved poll
                 if not guild:
-                    logger.warning(
-                        f"Guild {entry['guild_id']} not in cache; removing poll {msg_id} from state"
-                    )
-                    keys_to_remove.append(msg_id_str)
-                    # cleanup in-memory maps
-                    self.poll_votes.pop(msg_id, None)
-                    self.poll_threads.pop(msg_id, None)
                     continue
 
                 channel = guild.get_channel(entry["channel_id"])
-                # If channel not found, remove saved poll
                 if not channel:
-                    logger.warning(
-                        f"Channel {entry['channel_id']} not found; removing poll {msg_id} from state"
-                    )
-                    keys_to_remove.append(msg_id_str)
-                    self.poll_votes.pop(msg_id, None)
-                    self.poll_threads.pop(msg_id, None)
                     continue
 
                 try:
                     poll_message = await channel.fetch_message(msg_id)
                 except Exception:
-                    logger.warning(
-                        f"Could not fetch message {msg_id}; removing from state."
-                    )
-                    keys_to_remove.append(msg_id_str)
-                    self.poll_votes.pop(msg_id, None)
-                    self.poll_threads.pop(msg_id, None)
+                    await self.remove_poll_state(msg_id)
                     continue
 
                 end_time = datetime.utcfromtimestamp(entry["end_timestamp"])
-                # If already ended, remove state (but keep embed in Discord)
                 if end_time <= datetime.utcnow():
-                    logger.info(f"Poll {msg_id} already ended; removing from state.")
-                    keys_to_remove.append(msg_id_str)
-                    self.poll_votes.pop(msg_id, None)
-                    self.poll_threads.pop(msg_id, None)
+                    await self.remove_poll_state(msg_id)
                     continue
 
-                # attempt to resolve creator member
-                creator = (
-                    guild.get_member(entry.get("creator_id"))
-                    if entry.get("creator_id")
-                    else None
+                creator = guild.get_member(entry.get("creator_id")) or self.bot.user
+                description = (
+                    poll_message.embeds[0].description if poll_message.embeds else ""
                 )
 
-                # description: try to pull from embed
-                description = ""
-                try:
-                    description = poll_message.embeds[0].description or ""
-                except Exception:
-                    description = ""
-
-                # recreate view and attach
                 view = PollView(
-                    self,
-                    end_time,
-                    creator or self.bot.user,
-                    entry.get("question", ""),
-                    description,
+                    self, end_time, creator, entry.get("question", ""), description
                 )
                 view.message = poll_message
-                # restore vote count and thread mapping if possible
+
                 self.poll_votes[poll_message.id] = entry.get("votes", 0)
                 thread_obj = guild.get_channel(entry.get("thread_id"))
                 if thread_obj:
                     self.poll_threads[poll_message.id] = thread_obj
 
-                # attach view to message so the loop updates it
-                try:
-                    await poll_message.edit(view=view)
-                except Exception:
-                    # editing might fail but view will still run updating; log and continue
-                    logger.warning(f"Failed to reattach view to message {msg_id}")
+                await poll_message.edit(view=view)
                 logger.info(f"Restored poll view for message {msg_id}")
             except Exception as e:
                 logger.error(f"⚠️ Error restoring poll {msg_id_str}: {e}")
-
-        # Remove any stale entries found and persist the cleaned state
-        if keys_to_remove:
-            for k in keys_to_remove:
-                state.pop(k, None)
-            try:
-                self._save_state(state)
-                logger.info(
-                    f"Removed {len(keys_to_remove)} stale poll entries from state"
-                )
-            except Exception as e:
-                logger.error(f"⚠️ Failed to persist cleaned poll state: {e}")
 
 
 async def setup(bot):
     cog = Polls(bot)
     await bot.add_cog(cog)
-    # try to restore active polls from persisted state
     try:
         await cog.restore_polls_from_state()
     except Exception as e:
