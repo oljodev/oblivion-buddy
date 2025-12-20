@@ -133,25 +133,6 @@ class Tickets(commands.Cog):
             # Sender bot-objektet til View
             await channel.send(embed=embed, view=TicketPanel(self.bot))
 
-    # --- Command to manually create panel ---
-    @commands.command()
-    async def createticket(self, ctx):
-        # Legg til sjekk for Admin/Owner rettigheter her!
-        if not ctx.author.guild_permissions.administrator:
-            return await ctx.send(
-                "You do not have permission to use this command.", delete_after=5
-            )
-
-        channel = self.bot.get_channel(TICKET_CHANNEL_ID)
-        if channel:
-            embed = discord.Embed(
-                title="Need Help?",
-                description="Click the green button below to create a ticket.\nAdmins and helpers will be notified!",
-                color=discord.Color.dark_blue(),
-            )
-            await channel.send(embed=embed, view=TicketPanel(self.bot))
-            await ctx.send(f"✅ Ticket panel sent to {channel.mention}", delete_after=5)
-
 
 # --- NØDVENDIG: Setup Funksjon ---
 async def setup(bot):

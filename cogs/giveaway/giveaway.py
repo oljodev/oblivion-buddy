@@ -101,7 +101,7 @@ class JoinGiveawayButton(discord.ui.View):
         self.prize = prize
         self.description = description
         self.places = max(1, min(3, int(places or 1)))
-        self.winners = int(winners) if self.places <= 1 else 1
+        self.winners = int(winners) if self.places <= 1 else self.places
         self.ended = False
 
         # Starter avslutnings-oppgaven med en gang
@@ -288,9 +288,9 @@ class GiveawayModal(discord.ui.Modal):
             )
             return
 
-        # If user requested multiple places, enforce top-winner count to 1
+        # If user requested multiple places, enforce winner count to match places count
         if places_val > 1:
-            winner_count_val = 1
+            winner_count_val = places_val
 
         end_time = datetime.utcnow() + timedelta(seconds=seconds)
         end_ts = int(end_time.timestamp())
