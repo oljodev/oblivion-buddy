@@ -1,142 +1,285 @@
 import discord
 from discord.ext import commands
+from pathlib import Path
+import json
 
-GUILD_ID = discord.Object(id=1422932147550818507)
-
-
+# --- Constants ---
 TICKET_CHANNEL_ID = 1422936354404302921
-
-# --- Role IDs ---
 OWNER_ROLE_ID = 1422933406873813254
 ADMIN_ROLE_ID = 1422937935988265090
 HELPER_ROLE_ID = 1422937956959785040
 
-
-async def clean_ticket_channel(channel: discord.TextChannel):
-    messages = [msg async for msg in channel.history(limit=None, oldest_first=True)]
-    # Behold første melding (eldste), slett resten
-    for msg in messages[1:]:
-        await msg.delete()
+DATA_FILE = Path(__file__).parent / "tickets.json"
 
 
-# --- Ticket Controls (View for Claim/Close) ---
+# --- JSON Helpers ---
+def load_data():
+    if not DATA_FILE.exists():
+        return {"panel_message_id": None, "active_threads": []}
+    with open(DATA_FILE, "r") as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            return {"panel_message_id": None, "active_threads": []}
+
+
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+
+# --- Modals ---
+class TicketModal(discord.ui.Modal):
+    def __init__(self, title, reason_type):
+        super().__init__(title=title)
+        self.reason_type = reason_type
+
+        # dynamic fields based on selection
+        if reason_type == "Report":
+            self.add_item(
+                discord.ui.TextInput(
+                    label="Who are you reporting?",
+                    placeholder="Username...",
+                    required=True,
+                )
+            )
+            self.add_item(
+                discord.ui.TextInput(
+                    label="What happened?",
+                    style=discord.TextStyle.paragraph,
+                    required=True,
+                )
+            )
+            self.add_item(
+                discord.ui.TextInput(
+                    label="When did it happen?",
+                    placeholder="e.g. 10 minutes ago",
+                    required=False,
+                )
+            )
+            self.add_item(
+                discord.ui.TextInput(
+                    label="Coordinates/Location",
+                    placeholder="X: 100, Y: 64, Z: -500",
+                    required=False,
+                )
+            )
+        elif reason_type == "Technical":
+            self.add_item(
+                discord.ui.TextInput(
+                    label="What is the issue?",
+                    placeholder="Describe the bug/error...",
+                    style=discord.TextStyle.paragraph,
+                    required=True,
+                )
+            )
+        else:
+            self.add_item(
+                discord.ui.TextInput(
+                    label="Subject", placeholder="Brief summary...", required=True
+                )
+            )
+            self.add_item(
+                discord.ui.TextInput(
+                    label="Details", style=discord.TextStyle.paragraph, required=True
+                )
+            )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        # 1. Create the thread
+        target_channel = interaction.guild.get_channel(TICKET_CHANNEL_ID)
+        thread = await target_channel.create_thread(
+            name=f"{self.reason_type}-{interaction.user.name}",
+            type=discord.ChannelType.private_thread,
+        )
+
+        # 2. Save to JSON
+        data = load_data()
+        data["active_threads"].append(thread.id)
+        save_data(data)
+
+        # 3. Build the Summary Embed
+        embed = discord.Embed(
+            title=f"New Ticket: {self.reason_type}", color=discord.Color.green()
+        )
+        embed.set_author(
+            name=interaction.user.display_name,
+            icon_url=interaction.user.display_avatar.url,
+        )
+
+        for item in self.children:
+            embed.add_field(
+                name=item.label, value=item.value or "Not provided", inline=False
+            )
+
+        # 4. Pings
+        pings = " ".join(
+            [
+                f"<@&{r}>"
+                for r in [OWNER_ROLE_ID, ADMIN_ROLE_ID, HELPER_ROLE_ID]
+                if interaction.guild.get_role(r)
+            ]
+        )
+
+        await thread.send(
+            content=f"{pings} {interaction.user.mention}",
+            embed=embed,
+            view=TicketControls(),
+        )
+        await interaction.followup.send(
+            f"✅ Ticket created! Go here: {thread.mention}", ephemeral=True
+        )
+
+
+# --- Dropdown View ---
+class TicketDropdown(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label="Report a Player",
+                description="Stealing, Griefing, Rule Breaking",
+                emoji="🛡️",
+                value="Report",
+            ),
+            discord.SelectOption(
+                label="General Support",
+                description="Questions about the server",
+                emoji="❓",
+                value="Support",
+            ),
+            discord.SelectOption(
+                label="Technical Issue",
+                description="Bugs, Lag, Connection errors",
+                emoji="⚙️",
+                value="Technical",
+            ),
+            discord.SelectOption(
+                label="Other", description="Anything else", emoji="📝", value="Other"
+            ),
+        ]
+        super().__init__(
+            placeholder="Choose the reason for your ticket...",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.values[0] == "Report":
+            await interaction.response.send_modal(
+                TicketModal("Report Player", "Report")
+            )
+        elif self.values[0] == "Technical":
+            await interaction.response.send_modal(
+                TicketModal("Technical Support", "Technical")
+            )
+        else:
+            await interaction.response.send_modal(
+                TicketModal("Support Ticket", self.values[0])
+            )
+
+
+class TicketSelectionView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(TicketDropdown())
+
+
+# --- Persistence ---
 class TicketControls(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    # Inne i class TicketControls(discord.ui.View):
-
-    @discord.ui.button(label="Claim", style=discord.ButtonStyle.primary)
-    async def ticket_claim_button_callback(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):  # ENDRET NAVN HER
+    @discord.ui.button(
+        label="Claim", style=discord.ButtonStyle.primary, custom_id="claim_v2"
+    )
+    async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(
-            "✅ Ticket claimed. Thread will be deleted.", ephemeral=True
+            f"✅ Ticket claimed by {interaction.user.mention}."
         )
+        button.disabled = True
         await interaction.channel.delete()
 
-    @discord.ui.button(label="Close", style=discord.ButtonStyle.danger)
-    async def ticket_close_button_callback(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await interaction.response.send_message(
-            "🔒 Ticket closed. Thread will be deleted.", ephemeral=True
-        )
+    @discord.ui.button(
+        label="Close", style=discord.ButtonStyle.danger, custom_id="close_v2"
+    )
+    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+        data = load_data()
+        if interaction.channel.id in data["active_threads"]:
+            data["active_threads"].remove(interaction.channel.id)
+            save_data(data)
         await interaction.channel.delete()
 
 
-# --- Ticket Panel View (Create Ticket) ---
 class TicketPanel(discord.ui.View):
-    def __init__(self, bot_instance):
+    def __init__(self):
         super().__init__(timeout=None)
-        self.bot = bot_instance
 
-    @discord.ui.button(label="Create Ticket", style=discord.ButtonStyle.success)
+    @discord.ui.button(
+        label="Create Ticket",
+        style=discord.ButtonStyle.success,
+        custom_id="open_panel_v2",
+    )
     async def create_ticket(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        await interaction.response.defer(ephemeral=True)
-
-        target_channel = self.bot.get_channel(TICKET_CHANNEL_ID)
-
-        if not isinstance(target_channel, discord.TextChannel):
-            await interaction.followup.send(
-                "❌ Error: Could not create thread in this channel. Check TICKET_CHANNEL_ID.",
-                ephemeral=True,
-            )
-            return
-
-        try:
-            thread = await target_channel.create_thread(
-                name=f"Ticket-{interaction.user.name}",
-                type=discord.ChannelType.private_thread,
-            )
-        except Exception as e:
-            await interaction.followup.send(
-                f"❌ Error creating thread: {e}", ephemeral=True
-            )
-            return
-
-        async for msg in thread.history(limit=5):
-            if msg.type == discord.MessageType.thread_created:
-                await msg.delete()
-                break
-
-        owner_role = interaction.guild.get_role(OWNER_ROLE_ID)
-        admin_role = interaction.guild.get_role(ADMIN_ROLE_ID)
-        helper_role = interaction.guild.get_role(HELPER_ROLE_ID)
-
-        await clean_ticket_channel(target_channel)
-
-        pings = []
-        if owner_role:
-            pings.append(owner_role.mention)
-        if admin_role:
-            pings.append(admin_role.mention)
-        if helper_role:
-            pings.append(helper_role.mention)
-
-        ping_text = " ".join(pings)
-
-        await thread.send(f"{ping_text} {interaction.user.mention} opened a Ticket!")
-
-        embed = discord.Embed(
-            title="Ticket Created",
-            description="An admin or helper will assist you shortly.",
-            color=discord.Color.dark_gray(),
-        )
-        await thread.send(embed=embed, view=TicketControls())
-
-        await interaction.followup.send(
-            f"✅ Your Ticket has been created! Go to {thread.mention}", ephemeral=True
+        # Step 1: Send the ephemeral dropdown
+        await interaction.response.send_message(
+            "Please select the reason for your ticket below:",
+            view=TicketSelectionView(),
+            ephemeral=True,
         )
 
 
-# --- Tickets Cog ---
+# --- Cog ---
 class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def on_ready_setup(self):
-        """Kjøres fra main.py for å sette opp Ticket Panel og slette meldinger."""
+    async def send_main_panel(self, channel):
+        embed = discord.Embed(
+            title="Need Help, Support or Assistance?",
+            description=(
+                "Click the button below to start! You will be asked to select a category and fill out a short form so our staff can help you faster.\n\n"
+                "**Common Reasons:**\n"
+                "- 🛡️ **Reporting Players:** Stealing/Griefing\n"
+                "- ⚙️ **Technical:** Bug reports or lag issues\n"
+                "- ❓ **General:** Questions and help\n\n"
+                "**Staff will be notified immediately after you submit the form!**"
+            ),
+            color=discord.Color.dark_blue(),
+        )
+        msg = await channel.send(embed=embed, view=TicketPanel())
+        data = load_data()
+        data["panel_message_id"] = msg.id
+        save_data(data)
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        self.bot.add_view(TicketPanel())
+        self.bot.add_view(TicketControls())
+
         channel = self.bot.get_channel(TICKET_CHANNEL_ID)
-        if channel:
-            # Slett alle meldinger i kanalen
-            await channel.purge()
+        if not channel:
+            return
 
-            # Send new panel
-            embed = discord.Embed(
-                title="Need Help, Support or Assistance?",
-                description="Click the button below to open a private ticket. Our admins and helpers will be notified and ready to assist you!\n\n**When to create a ticket:**  \n- Questions about the server or mods  \n- Bugs, exploits, or technical issues  \n- Help with other players or gameplay concerns  \n\n**Why use a ticket?**  \n- Private and faster support  \n- Keeps public channels clean  \n- Staff can track and solve issues efficiently  \n\n**Don’t worry!**  \nIt’s always better to open a ticket than ping staff in public channels. We’re here to help!",
-                color=discord.Color.dark_blue(),
-            )
-            # Sender bot-objektet til View
-            await channel.send(embed=embed, view=TicketPanel(self.bot))
+        data = load_data()
+        is_empty = True
+        async for _ in channel.history(limit=1):
+            is_empty = False
+            break
+
+        if is_empty or not data.get("panel_message_id"):
+            await self.send_main_panel(channel)
+
+    @commands.Cog.listener()
+    async def on_message_delete(self, message):
+        data = load_data()
+        if message.id == data.get("panel_message_id"):
+            await self.send_main_panel(message.channel)
 
 
-# --- NØDVENDIG: Setup Funksjon ---
 async def setup(bot):
-    cog = Tickets(bot)
-    await bot.add_cog(cog)
-    # Kjør setup-funksjonen for å sikre at panelet er på plass
-    await cog.on_ready_setup()
+    await bot.add_cog(Tickets(bot))
