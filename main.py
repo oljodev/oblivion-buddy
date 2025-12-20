@@ -48,7 +48,6 @@ async def help_command_for_users(interaction: discord.Interaction):
     help_text = (
         "Available commands:\n\n"
         "/stats <username> - Get simple Discord stats for a user\n"
-        "!ai - Interact with the AI bot in ticket threads\n"
         "\nThanks for using our bot!"
     )
     await interaction.response.send_message(help_text)
