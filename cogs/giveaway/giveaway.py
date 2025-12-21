@@ -147,7 +147,7 @@ class JoinGiveawayButton(discord.ui.View):
                 for idx, uid in enumerate(chosen):
                     emoji = ["🥇", "🥈", "🥉"][idx]
                     prize_desc = (
-                        f"**{self.prize}**" if idx == 0 else "en runner-up premie"
+                        f"**{self.prize}**" if idx == 0 else "a runner-up prize"
                     )
                     lines.append(
                         f"{emoji} {place_names[idx]} place — <@{uid}> — won {prize_desc}"
