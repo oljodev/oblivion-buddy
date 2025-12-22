@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger("UserStats")
 
-DATA_FOLDER = "./cogs/stats/user_data"
+DATA_FOLDER = "./cogs/simple_stats/user_data"
 
 GUILD_ID = discord.Object(id=1422932147550818507)
 
