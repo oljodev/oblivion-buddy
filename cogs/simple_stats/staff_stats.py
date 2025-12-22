@@ -9,7 +9,7 @@ logger = logging.getLogger("ServerTracker")
 
 STAFF_STATS_CHANNEL_ID = 1433549179942338570
 
-STATS_FILE = "./cogs/stats/staff_stats.json"
+STATS_FILE = "./cogs/simple_stats/staff_stats.json"
 
 
 class ServerTracker(commands.Cog):
