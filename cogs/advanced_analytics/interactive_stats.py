@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button
-import analytics_core
+from cogs.advanced_analytics import analytics_core
 
 # --- KONFIGURASJON ---
 DISCORD_STATS_CHANNEL_ID = 1452612533490946088

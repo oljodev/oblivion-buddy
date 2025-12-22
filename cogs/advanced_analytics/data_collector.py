@@ -3,7 +3,7 @@ from datetime import datetime
 import os
 import re
 from aiomcrcon import Client
-import analytics_core  # Import the file we created above
+from cogs.advanced_analytics import analytics_core
 
 # RCON Config
 RCON_IP = os.getenv("RCON_IP", "localhost")

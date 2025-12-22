@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from datetime import time, timezone
-import analytics_core
+from cogs.advanced_analytics import analytics_core
 
 # CONFIG: Where to send the daily report
 REPORT_CHANNEL_ID = 1452598796377653331
