@@ -9,6 +9,7 @@ RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))
 RCON_PASS = os.getenv("RCON_PASS", "secret")
 
+LOG_CHANNEL_ID = 1452598796377653331
 STATUS_CHANNEL_ID = 1422934996976402442
 SERVER_NAME = "Oblivion SMP"
 
@@ -149,6 +150,20 @@ class ServerStatusCog(commands.Cog):
             value=f"{player_count}/{max_players}" if is_online else "0/0",
             inline=True,
         )
+
+        if is_online and player_count >= 5:
+            log_channel = self.bot.get_channel(LOG_CHANNEL_ID)
+            if log_channel:
+                player_list_str = (
+                    ", ".join(player_names) if player_names else "No players online."
+                )
+                log_embed = discord.Embed(
+                    title="Server Population Alert",
+                    description=f"There are currently **{player_count}** players online:\n{player_list_str}",
+                    color=discord.Color.blue(),
+                    timestamp=datetime.now(),
+                )
+                await log_channel.send(embed=log_embed)
 
         if is_online:
             if player_names:
