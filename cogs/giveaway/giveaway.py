@@ -18,6 +18,8 @@ OWNER_ROLE_ID = 1422933406873813254
 ADMIN_ROLE_ID = 1422937935988265090
 MEMBER_ROLE_ID = 1422937958897422406
 
+LOG_CHANNEL_ID = 1452598796377653331
+
 # New: persistence file path and helpers
 GIVEAWAYS_FILE = Path(__file__).parent / "giveaways.json"
 
@@ -176,7 +178,7 @@ class JoinGiveawayButton(discord.ui.View):
                 await self.message.channel.send(result_text)
                 remove_saved_giveaway(self.message.id)
             except Exception as e:
-                logger.error(f"Feil ved avslutning: {e}")
+                logger.error(f"Error ending giveaway: {e}")
 
     @discord.ui.button(label="🎉", style=discord.ButtonStyle.blurple)
     async def join_button(
@@ -184,12 +186,12 @@ class JoinGiveawayButton(discord.ui.View):
     ):
         if self.ended:
             return await interaction.response.send_message(
-                "Denne er allerede ferdig!", ephemeral=True
+                "This has already ended!", ephemeral=True
             )
 
         if interaction.user.id in self.entries:
             await interaction.response.send_message(
-                "Du er allerede med!", ephemeral=True
+                "You are already participating!", ephemeral=True
             )
         else:
             self.entries.append(interaction.user.id)
@@ -202,6 +204,16 @@ class JoinGiveawayButton(discord.ui.View):
             )
 
             await interaction.response.edit_message(embed=embed, view=self)
+
+            embed_log = discord.Embed(
+                title="New Giveaway Entry",
+                description=f"{interaction.user.mention} has entered the giveaway for **{self.prize}**.",
+                color=discord.Color.green(),
+                timestamp=datetime.utcnow(),
+            )
+            log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+            if log_channel:
+                await log_channel.send(embed=embed_log)
 
 
 class GiveawayModal(discord.ui.Modal):
