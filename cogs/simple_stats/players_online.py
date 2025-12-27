@@ -199,7 +199,7 @@ class PlayersOnline(commands.Cog):
             name=f"All Time Unique ({len(all_time)})", value=fmt(all_time), inline=False
         )
 
-        embed.set_footer(text="Auto-updates every 5 minutes")
+        embed.set_footer(text="Auto-updates every 15 minutes")
         return embed
 
     async def _send_milestone_announcement(self, milestone_count):
