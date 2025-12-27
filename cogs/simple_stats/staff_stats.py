@@ -8,6 +8,7 @@ import os
 logger = logging.getLogger("ServerTracker")
 
 STAFF_STATS_CHANNEL_ID = 1433549179942338570
+LOG_CHANNEL_ID = 1452598796377653331
 
 STATS_FILE = "./cogs/simple_stats/staff_stats.json"
 
@@ -40,11 +41,27 @@ class ServerTracker(commands.Cog):
                     self.reaction_count = data.get("reaction_count", 0)
                     self.voice_events = data.get("voice_events", 0)
                     self.message_to_edit_id = data.get("message_to_edit_id")
+                    self.announced_message_milestones = data.get(
+                        "announced_message_milestones", []
+                    )
+                    self.announced_reaction_milestones = data.get(
+                        "announced_reaction_milestones", []
+                    )
+                    self.announced_voice_milestones = data.get(
+                        "announced_voice_milestones", []
+                    )
+                    self.announced_member_milestones = data.get(
+                        "announced_member_milestones", []
+                    )
                     logger.info(f"✅ Loaded stats from {STATS_FILE}")
             except Exception as e:
                 logger.error(f"Failed to load stats: {e}")
         else:
             logger.info("No stats file found, starting fresh.")
+            self.announced_message_milestones = []
+            self.announced_reaction_milestones = []
+            self.announced_voice_milestones = []
+            self.announced_member_milestones = []
 
     def save_stats(self):
         data = {
@@ -52,6 +69,10 @@ class ServerTracker(commands.Cog):
             "reaction_count": self.reaction_count,
             "voice_events": self.voice_events,
             "message_to_edit_id": self.message_to_edit_id,
+            "announced_message_milestones": self.announced_message_milestones,
+            "announced_reaction_milestones": self.announced_reaction_milestones,
+            "announced_voice_milestones": self.announced_voice_milestones,
+            "announced_member_milestones": self.announced_member_milestones,
         }
         try:
             with open(STATS_FILE, "w") as f:
@@ -86,6 +107,63 @@ class ServerTracker(commands.Cog):
                 f"Voice state change for {member}: {before.channel} -> {after.channel}"
             )
 
+    # --- Milestone Helpers ---
+    def _get_milestone_every_n(self, current_count, interval):
+        """Get the highest milestone reached at every N units (e.g., 10, 20, 30, ...)"""
+        if current_count < interval:
+            return None
+        return (current_count // interval) * interval
+
+    async def _send_milestone_announcement(self, milestone_count, stat_type):
+        """Send an embed to the LOG channel announcing a new milestone.
+
+        Args:
+            milestone_count: The count that was reached
+            stat_type: Type of stat - 'messages', 'reactions', 'voice', or 'members'
+        """
+        channel = self.bot.get_channel(LOG_CHANNEL_ID)
+        if not channel:
+            logger.warning(f"LOG channel {LOG_CHANNEL_ID} not found")
+            return
+
+        # Customize the embed based on stat type
+        if stat_type == "messages":
+            title = "🎉 Message Milestone Reached!"
+            description = (
+                f"The discord server has reached **{milestone_count:,}** messages!"
+            )
+        elif stat_type == "reactions":
+            title = "🎉 Reaction Milestone Reached!"
+            description = (
+                f"The discord server has reached **{milestone_count:,}** reactions!"
+            )
+        elif stat_type == "voice":
+            title = "🎉 Voice Channel Milestone Reached!"
+            description = f"The discord server has reached **{milestone_count:,}** voice channel joins/leaves!"
+        elif stat_type == "members":
+            title = "🎉 Member Milestone Reached!"
+            description = (
+                f"The discord server has reached **{milestone_count:,}** members!"
+            )
+
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            colour=discord.Colour.gold(),
+            timestamp=datetime.now(),
+        )
+        embed.set_footer(text="Oblivion Buddy Milestone Tracker")
+
+        try:
+            await channel.send(embed=embed)
+            logger.info(
+                f"Milestone announcement sent for {stat_type}: {milestone_count}"
+            )
+        except Exception:
+            logger.exception(
+                f"Failed to send milestone announcement for {stat_type}: {milestone_count}"
+            )
+
     # --- Embed Updater ---
     @tasks.loop(seconds=60)
     async def update_embed(self):
@@ -100,6 +178,43 @@ class ServerTracker(commands.Cog):
 
         guild = channel.guild
         total_members = guild.member_count
+
+        # Check for message milestone (every 1000)
+        message_milestone = self._get_milestone_every_n(self.message_count, 1000)
+        if (
+            message_milestone
+            and message_milestone not in self.announced_message_milestones
+        ):
+            await self._send_milestone_announcement(message_milestone, "messages")
+            self.announced_message_milestones.append(message_milestone)
+            self.save_stats()
+
+        # Check for reaction milestone (every 100)
+        reaction_milestone = self._get_milestone_every_n(self.reaction_count, 100)
+        if (
+            reaction_milestone
+            and reaction_milestone not in self.announced_reaction_milestones
+        ):
+            await self._send_milestone_announcement(reaction_milestone, "reactions")
+            self.announced_reaction_milestones.append(reaction_milestone)
+            self.save_stats()
+
+        # Check for voice milestone (every 100)
+        voice_milestone = self._get_milestone_every_n(self.voice_events, 100)
+        if voice_milestone and voice_milestone not in self.announced_voice_milestones:
+            await self._send_milestone_announcement(voice_milestone, "voice")
+            self.announced_voice_milestones.append(voice_milestone)
+            self.save_stats()
+
+        # Check for member milestone (every 10)
+        member_milestone = self._get_milestone_every_n(total_members, 10)
+        if (
+            member_milestone
+            and member_milestone not in self.announced_member_milestones
+        ):
+            await self._send_milestone_announcement(member_milestone, "members")
+            self.announced_member_milestones.append(member_milestone)
+            self.save_stats()
 
         embed = discord.Embed(
             title=f"📊 Live Server Statistics – {guild.name}",
@@ -117,7 +232,7 @@ class ServerTracker(commands.Cog):
             value=f"{self.voice_events:,}",
             inline=True,
         )
-        embed.add_field(name="👥 Members", value=f"{total_members:,}", inline=True)
+        embed.add_field(name="👥 Members", value=f"{total_members - 1:,}", inline=True)
         embed.set_footer(text="Auto-updated every 60 seconds")
 
         try:
