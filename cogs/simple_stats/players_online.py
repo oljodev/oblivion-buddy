@@ -11,6 +11,7 @@ RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))
 RCON_PASSWORD = os.getenv("RCON_PASS", "secret")
 
+LOG_CHANNEL_ID = 1452598796377653331
 STATS_CHANNEL_ID = 1433549179942338570
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,9 @@ class PlayersOnline(commands.Cog):
             os.makedirs(dirpath, exist_ok=True)
         if not os.path.exists(self.storage_path):
             with open(self.storage_path, "w", encoding="utf-8") as f:
-                json.dump({"message_id": 0, "players": {}}, f)
+                json.dump(
+                    {"message_id": 0, "players": {}, "announced_milestones": []}, f
+                )
 
     def _load_storage(self):
         try:
@@ -65,6 +68,7 @@ class PlayersOnline(commands.Cog):
 
         self.storage.setdefault("message_id", 0)
         self.storage.setdefault("players", {})
+        self.storage.setdefault("announced_milestones", [])
 
     def _save_storage(self):
         tmp = self.storage_path + ".tmp"
@@ -155,6 +159,13 @@ class PlayersOnline(commands.Cog):
 
         return sort_nocase(last24), sort_nocase(last72), sort_nocase(all_time)
 
+    def _get_next_milestone(self, current_count):
+        """Get the next milestone if current_count has reached one (50, 75, 100, 125, ...)"""
+        for milestone in range(50, current_count + 1, 25):
+            if current_count >= milestone:
+                return milestone
+        return None
+
     def _build_embed(self):
         now = datetime.now(timezone.utc)
         embed = discord.Embed(
@@ -191,7 +202,30 @@ class PlayersOnline(commands.Cog):
         embed.set_footer(text="Auto-updates every 5 minutes")
         return embed
 
-    @tasks.loop(minutes=5.0)
+    async def _send_milestone_announcement(self, milestone_count):
+        """Send an embed to the LOG channel announcing a new milestone."""
+        channel = self.bot.get_channel(LOG_CHANNEL_ID)
+        if not channel:
+            logger.warning(f"LOG channel {LOG_CHANNEL_ID} not found")
+            return
+
+        embed = discord.Embed(
+            title="🎉 Unique Players Milestone Reached!",
+            description=f"The server has reached **{milestone_count}** all-time unique players!",
+            colour=discord.Colour.gold(),
+            timestamp=datetime.now(timezone.utc),
+        )
+        embed.set_footer(text="Oblivion Buddy Milestone Tracker")
+
+        try:
+            await channel.send(embed=embed)
+            logger.info(f"Milestone announcement sent for {milestone_count} players")
+        except Exception:
+            logger.exception(
+                f"Failed to send milestone announcement for {milestone_count}"
+            )
+
+    @tasks.loop(minutes=15.0)
     async def poll_task(self):
         await self.bot.wait_until_ready()
         resp = await self._rcon_list()
@@ -219,6 +253,16 @@ class PlayersOnline(commands.Cog):
         self.storage["players"] = {
             n: ts for n, ts in players.items() if float(ts) >= cutoff
         }
+
+        # Check for milestone achievements
+        all_time_count = len(self.storage["players"])
+        announced_milestones = self.storage.setdefault("announced_milestones", [])
+
+        milestone = self._get_next_milestone(all_time_count)
+        if milestone and milestone not in announced_milestones:
+            await self._send_milestone_announcement(milestone)
+            announced_milestones.append(milestone)
+            self.storage["announced_milestones"] = announced_milestones
 
         embed = self._build_embed()
         channel = self.bot.get_channel(STATS_CHANNEL_ID)
