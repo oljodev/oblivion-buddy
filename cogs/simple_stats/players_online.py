@@ -56,7 +56,14 @@ class PlayersOnline(commands.Cog):
         if not os.path.exists(self.storage_path):
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(
-                    {"message_id": 0, "players": {}, "announced_milestones": []}, f
+                    {
+                        "message_id": 0,
+                        "players": {},
+                        "announced_milestones": [],
+                        "announced_last24_milestones": [],
+                        "announced_last72_milestones": [],
+                    },
+                    f,
                 )
 
     def _load_storage(self):
@@ -69,6 +76,8 @@ class PlayersOnline(commands.Cog):
         self.storage.setdefault("message_id", 0)
         self.storage.setdefault("players", {})
         self.storage.setdefault("announced_milestones", [])
+        self.storage.setdefault("announced_last24_milestones", [])
+        self.storage.setdefault("announced_last72_milestones", [])
 
     def _save_storage(self):
         tmp = self.storage_path + ".tmp"
@@ -166,6 +175,13 @@ class PlayersOnline(commands.Cog):
                 return milestone
         return None
 
+    def _get_next_10_milestone(self, current_count):
+        """Get the next 10-player milestone if current_count has reached one (10, 20, 30, 40, 50, ...)"""
+        for milestone in range(10, current_count + 1, 10):
+            if current_count >= milestone:
+                return milestone
+        return None
+
     def _build_embed(self):
         now = datetime.now(timezone.utc)
         embed = discord.Embed(
@@ -202,16 +218,34 @@ class PlayersOnline(commands.Cog):
         embed.set_footer(text="Auto-updates every 15 minutes")
         return embed
 
-    async def _send_milestone_announcement(self, milestone_count):
-        """Send an embed to the LOG channel announcing a new milestone."""
+    async def _send_milestone_announcement(self, milestone_count, category="all_time"):
+        """Send an embed to the LOG channel announcing a new milestone.
+
+        Args:
+            milestone_count: The player count that was reached
+            category: Type of milestone - 'all_time', 'last24', or 'last72'
+        """
         channel = self.bot.get_channel(LOG_CHANNEL_ID)
         if not channel:
             logger.warning(f"LOG channel {LOG_CHANNEL_ID} not found")
             return
 
+        # Customize the embed based on category
+        if category == "last24":
+            title = "🎉 Last 24 Hours Milestone Reached!"
+            description = f"The server has had **{milestone_count}** unique players in the last 24 hours!"
+        elif category == "last72":
+            title = "🎉 Last 72 Hours Milestone Reached!"
+            description = f"The server has had **{milestone_count}** unique players in the last 72 hours!"
+        else:  # all_time
+            title = "🎉 Unique Players Milestone Reached!"
+            description = (
+                f"The server has reached **{milestone_count}** all-time unique players!"
+            )
+
         embed = discord.Embed(
-            title="🎉 Unique Players Milestone Reached!",
-            description=f"The server has reached **{milestone_count}** all-time unique players!",
+            title=title,
+            description=description,
             colour=discord.Colour.gold(),
             timestamp=datetime.now(timezone.utc),
         )
@@ -219,10 +253,12 @@ class PlayersOnline(commands.Cog):
 
         try:
             await channel.send(embed=embed)
-            logger.info(f"Milestone announcement sent for {milestone_count} players")
+            logger.info(
+                f"Milestone announcement sent for {category}: {milestone_count} players"
+            )
         except Exception:
             logger.exception(
-                f"Failed to send milestone announcement for {milestone_count}"
+                f"Failed to send milestone announcement for {category}: {milestone_count}"
             )
 
     @tasks.loop(minutes=15.0)
@@ -254,15 +290,35 @@ class PlayersOnline(commands.Cog):
             n: ts for n, ts in players.items() if float(ts) >= cutoff
         }
 
-        # Check for milestone achievements
-        all_time_count = len(self.storage["players"])
-        announced_milestones = self.storage.setdefault("announced_milestones", [])
+        # Get player counts for all categories
+        last24, last72, all_time = self._categorize_players()
+        all_time_count = len(all_time)
+        last24_count = len(last24)
+        last72_count = len(last72)
 
+        # Check for all-time milestone achievements
+        announced_milestones = self.storage.setdefault("announced_milestones", [])
         milestone = self._get_next_milestone(all_time_count)
         if milestone and milestone not in announced_milestones:
-            await self._send_milestone_announcement(milestone)
+            await self._send_milestone_announcement(milestone, category="all_time")
             announced_milestones.append(milestone)
             self.storage["announced_milestones"] = announced_milestones
+
+        # Check for last 24 hours milestone achievements
+        announced_last24 = self.storage.setdefault("announced_last24_milestones", [])
+        milestone_24 = self._get_next_10_milestone(last24_count)
+        if milestone_24 and milestone_24 not in announced_last24:
+            await self._send_milestone_announcement(milestone_24, category="last24")
+            announced_last24.append(milestone_24)
+            self.storage["announced_last24_milestones"] = announced_last24
+
+        # Check for last 72 hours milestone achievements
+        announced_last72 = self.storage.setdefault("announced_last72_milestones", [])
+        milestone_72 = self._get_next_10_milestone(last72_count)
+        if milestone_72 and milestone_72 not in announced_last72:
+            await self._send_milestone_announcement(milestone_72, category="last72")
+            announced_last72.append(milestone_72)
+            self.storage["announced_last72_milestones"] = announced_last72
 
         embed = self._build_embed()
         channel = self.bot.get_channel(STATS_CHANNEL_ID)
