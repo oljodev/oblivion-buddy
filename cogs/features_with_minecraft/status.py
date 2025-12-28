@@ -38,6 +38,10 @@ class ServerStatusCog(commands.Cog):
         self.bot = bot
         self.status_message = None
         self.last_status = None
+        self.log_message = None
+        self.last_player_count = 0
+        self.last_logged_threshold = 0
+        self.log_message_sent_time = None
         self.update_status.start()
 
     def cog_unload(self):
@@ -154,16 +158,79 @@ class ServerStatusCog(commands.Cog):
         if is_online and player_count >= 5:
             log_channel = self.bot.get_channel(LOG_CHANNEL_ID)
             if log_channel:
-                player_list_str = (
-                    ", ".join(player_names) if player_names else "No players online."
-                )
-                log_embed = discord.Embed(
-                    title="Server Population Alert",
-                    description=f"There are currently **{player_count}** players online:\n{player_list_str}",
-                    color=discord.Color.blue(),
-                    timestamp=datetime.now(),
-                )
-                await log_channel.send(embed=log_embed)
+                # Calculate the current threshold (5, 10, 15, 20, etc.)
+                current_threshold = (player_count // 5) * 5
+
+                # Check if we've crossed a threshold
+                should_send_new = False
+
+                # If player count dropped below the last logged threshold, reset
+                if player_count < self.last_logged_threshold:
+                    self.last_logged_threshold = 0
+                    should_send_new = False
+
+                # If we've reached a new threshold, send/edit
+                if current_threshold > self.last_logged_threshold:
+                    self.last_logged_threshold = current_threshold
+                    should_send_new = True
+
+                # Update log message if threshold reached
+                if should_send_new or self.log_message is None:
+                    player_list_str = (
+                        "\n".join(player_names)
+                        if player_names
+                        else "No players online."
+                    )
+                    current_time = datetime.now()
+                    log_embed = discord.Embed(
+                        title="Server Population Alert",
+                        description=f"There are currently **{player_count}** players online:\n{player_list_str}",
+                        color=discord.Color.blue(),
+                        timestamp=current_time,
+                    )
+                    log_embed.set_footer(
+                        text=f"Sent: {current_time.strftime('%H:%M:%S')} | Last updated: {current_time.strftime('%H:%M:%S')}"
+                    )
+
+                    if should_send_new and self.log_message is None:
+                        # Send a new message
+                        try:
+                            self.log_message = await log_channel.send(embed=log_embed)
+                            self.log_message_sent_time = current_time
+                        except Exception as e:
+                            print(f"Error sending log message: {e}")
+                    elif self.log_message:
+                        # Edit existing message
+                        try:
+                            log_embed.set_footer(
+                                text=f"Sent: {self.log_message_sent_time.strftime('%H:%M:%S')} | Last generated: {current_time.strftime('%H:%M:%S')}"
+                            )
+                            await self.log_message.edit(embed=log_embed)
+                        except discord.NotFound:
+                            # Message was deleted, send a new one
+                            try:
+                                self.log_message = await log_channel.send(
+                                    embed=log_embed
+                                )
+                                self.log_message_sent_time = current_time
+                            except Exception as e:
+                                print(
+                                    f"Error sending new log message after deletion: {e}"
+                                )
+                        except Exception as e:
+                            print(f"Error editing log message: {e}")
+                elif self.log_message:
+                    # Update footer with last generated time
+                    try:
+                        current_time = datetime.now()
+                        if self.log_message.embeds:
+                            log_embed = self.log_message.embeds[0]
+                            log_embed.set_footer(
+                                text=f"Sent: {self.log_message_sent_time.strftime('%H:%M:%S')} | Last generated: {current_time.strftime('%H:%M:%S')}"
+                            )
+                            await self.log_message.edit(embed=log_embed)
+                    except Exception as e:
+                        print(f"Error updating log message footer: {e}")
 
         if is_online:
             if player_names:
@@ -173,20 +240,22 @@ class ServerStatusCog(commands.Cog):
                     names_str += f"\n...and {len(player_names) - 20} more"
 
                 embed.add_field(
-                    name="🧍 Player List",
+                    name="🧍 Player List:",
                     value=names_str,
                     inline=False,
                 )
             else:
                 embed.add_field(
-                    name="🧍 Player List", value="*No players online.*", inline=False
+                    name="🧍 Player List:", value="*No players online.*", inline=False
                 )
         else:
             embed.add_field(
-                name="🧍 Player List", value="*Server is offline.*", inline=False
+                name="🧍 Player List:", value="*Server is offline.*", inline=False
             )
 
-        embed.set_footer(text="Last updated")
+        embed.set_footer(
+            text=f"Sent: {datetime.now().strftime('%H:%M:%S')} | Last updated: {datetime.now().strftime('%H:%M:%S')}"
+        )
 
         # --- SEND ELLER OPPDATER MELDING ---
         if not self.status_message:
