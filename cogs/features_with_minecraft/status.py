@@ -203,7 +203,7 @@ class ServerStatusCog(commands.Cog):
                         # Edit existing message
                         try:
                             log_embed.set_footer(
-                                text=f"Sent: {self.log_message_sent_time.strftime('%H:%M:%S')} | Last generated: {current_time.strftime('%H:%M:%S')}"
+                                text=f"Sent: {self.log_message_sent_time.strftime('%H:%M:%S')} | Last updated: {current_time.strftime('%H:%M:%S')}"
                             )
                             await self.log_message.edit(embed=log_embed)
                         except discord.NotFound:
@@ -226,7 +226,7 @@ class ServerStatusCog(commands.Cog):
                         if self.log_message.embeds:
                             log_embed = self.log_message.embeds[0]
                             log_embed.set_footer(
-                                text=f"Sent: {self.log_message_sent_time.strftime('%H:%M:%S')} | Last generated: {current_time.strftime('%H:%M:%S')}"
+                                text=f"Sent: {self.log_message_sent_time.strftime('%H:%M:%S')} | Last updated: {current_time.strftime('%H:%M:%S')}"
                             )
                             await self.log_message.edit(embed=log_embed)
                     except Exception as e:
