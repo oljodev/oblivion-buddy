@@ -253,9 +253,7 @@ class ServerStatusCog(commands.Cog):
                 name="🧍 Player List:", value="*Server is offline.*", inline=False
             )
 
-        embed.set_footer(
-            text=f"Sent: {datetime.now().strftime('%H:%M:%S')} | Last updated: {datetime.now().strftime('%H:%M:%S')}"
-        )
+        embed.set_footer(text="Updates every 60 seconds")
 
         # --- SEND ELLER OPPDATER MELDING ---
         if not self.status_message:
