@@ -1,4 +1,5 @@
 import discord
+from datetime import datetime
 from discord.ext import commands, tasks
 from discord.ui import View, Button
 from cogs.advanced_analytics import analytics_core
@@ -49,6 +50,7 @@ class HistoryView(View):
             embed = discord.Embed(
                 title=f"📊 Discord Statistikk: {date_str}",
                 color=discord.Color.blurple(),
+                timestamp=datetime.now(),
             )
             embed.add_field(
                 name="Meldinger", value=str(d["total_messages"]), inline=True
@@ -72,7 +74,9 @@ class HistoryView(View):
                 avg_mins = (m["total_playtime_checks"] * 15) / len(m["unique_logins"])
 
             embed = discord.Embed(
-                title=f"⛏️ Minecraft Statistikk: {date_str}", color=discord.Color.green()
+                title=f"⛏️ Minecraft Statistikk: {date_str}",
+                color=discord.Color.green(),
+                timestamp=datetime.now(),
             )
             embed.add_field(
                 name="Peak Spillere", value=str(m["peak_players"]), inline=True
