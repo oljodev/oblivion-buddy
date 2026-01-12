@@ -1,9 +1,9 @@
 import discord
 from discord.ext import commands, tasks
 from aiomcrcon import Client
+from datetime import datetime, timedelta
 import os
 import re
-from datetime import datetime
 
 RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))
@@ -157,80 +157,50 @@ class ServerStatusCog(commands.Cog):
 
         if is_online and player_count >= 5:
             log_channel = self.bot.get_channel(LOG_CHANNEL_ID)
+
             if log_channel:
-                # Calculate the current threshold (5, 10, 15, 20, etc.)
                 current_threshold = (player_count // 5) * 5
+                current_time = datetime.now()
 
-                # Check if we've crossed a threshold
-                should_send_new = False
+                # Sjekk om vi har nådd en ny terskel
+                reached_new_threshold = current_threshold > self.last_logged_threshold
 
-                # If player count dropped below the last logged threshold, reset
-                if player_count < self.last_logged_threshold:
-                    self.last_logged_threshold = 0
-                    should_send_new = False
+                # Sjekk om det er mer enn 30 minutter siden forrige melding
+                time_diff = current_time - self.last_log_time
+                cooldown_passed = time_diff >= timedelta(minutes=30)
 
-                # If we've reached a new threshold, send/edit
-                if current_threshold > self.last_logged_threshold:
+                # Send kun hvis vi har nådd ny terskel OG det har gått 30 minutter
+                if reached_new_threshold and cooldown_passed:
                     self.last_logged_threshold = current_threshold
-                    should_send_new = True
+                    self.last_log_time = (
+                        current_time  # Oppdaterer tidspunktet for sending
+                    )
 
-                # Update log message if threshold reached
-                if should_send_new or self.log_message is None:
                     player_list_str = (
                         "\n".join(player_names)
                         if player_names
-                        else "No players online."
+                        else "No player names available."
                     )
-                    current_time = datetime.now()
+
                     log_embed = discord.Embed(
-                        title="Server Population Alert",
-                        description=f"There are currently **{player_count}** players online:\n{player_list_str}",
-                        color=discord.Color.blue(),
+                        title="📈 Server Population Alert",
+                        description=f"We have reached **{player_count}** players online!\n\n**Players:**\n{player_list_str}",
+                        color=discord.Color.green(),
                         timestamp=current_time,
                     )
                     log_embed.set_footer(
-                        text=f"Sent: {current_time.strftime('%H:%M:%S')} | Last updated: {current_time.strftime('%H:%M:%S')}"
+                        text=f"Milestone reached: {current_threshold}+ players"
                     )
 
-                    if should_send_new and self.log_message is None:
-                        # Send a new message
-                        try:
-                            self.log_message = await log_channel.send(embed=log_embed)
-                            self.log_message_sent_time = current_time
-                        except Exception as e:
-                            print(f"Error sending log message: {e}")
-                    elif self.log_message:
-                        # Edit existing message
-                        try:
-                            log_embed.set_footer(
-                                text=f"Sent: {self.log_message_sent_time.strftime('%H:%M:%S')} | Last updated: {current_time.strftime('%H:%M:%S')}"
-                            )
-                            await self.log_message.edit(embed=log_embed)
-                        except discord.NotFound:
-                            # Message was deleted, send a new one
-                            try:
-                                self.log_message = await log_channel.send(
-                                    embed=log_embed
-                                )
-                                self.log_message_sent_time = current_time
-                            except Exception as e:
-                                print(
-                                    f"Error sending new log message after deletion: {e}"
-                                )
-                        except Exception as e:
-                            print(f"Error editing log message: {e}")
-                elif self.log_message:
-                    # Update footer with last generated time
                     try:
-                        current_time = datetime.now()
-                        if self.log_message.embeds:
-                            log_embed = self.log_message.embeds[0]
-                            log_embed.set_footer(
-                                text=f"Sent: {self.log_message_sent_time.strftime('%H:%M:%S')} | Last updated: {current_time.strftime('%H:%M:%S')}"
-                            )
-                            await self.log_message.edit(embed=log_embed)
+                        await log_channel.send(embed=log_embed)
                     except Exception as e:
-                        print(f"Error updating log message footer: {e}")
+                        print(f"Error sending log message: {e}")
+
+                # Hvis spillerantallet faller under terskelen, resetter vi threshold
+                # slik at den er klar til å varsle når det stiger igjen (f.eks. fra 10 til 8)
+                elif current_threshold < self.last_logged_threshold:
+                    self.last_logged_threshold = current_threshold
 
         if is_online:
             if player_names:
