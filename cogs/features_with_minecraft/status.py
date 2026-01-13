@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from aiomcrcon import Client
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import re
 
@@ -9,7 +9,6 @@ RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))
 RCON_PASS = os.getenv("RCON_PASS", "secret")
 
-LOG_CHANNEL_ID = 1452598796377653331
 STATUS_CHANNEL_ID = 1422934996976402442
 SERVER_NAME = "Oblivion SMP"
 
@@ -154,53 +153,6 @@ class ServerStatusCog(commands.Cog):
             value=f"{player_count}/{max_players}" if is_online else "0/0",
             inline=True,
         )
-
-        if is_online and player_count >= 5:
-            log_channel = self.bot.get_channel(LOG_CHANNEL_ID)
-
-            if log_channel:
-                current_threshold = (player_count // 5) * 5
-                current_time = datetime.now()
-
-                # Sjekk om vi har nådd en ny terskel
-                reached_new_threshold = current_threshold > self.last_logged_threshold
-
-                # Sjekk om det er mer enn 30 minutter siden forrige melding
-                time_diff = current_time - self.last_log_time
-                cooldown_passed = time_diff >= timedelta(minutes=30)
-
-                # Send kun hvis vi har nådd ny terskel OG det har gått 30 minutter
-                if reached_new_threshold and cooldown_passed:
-                    self.last_logged_threshold = current_threshold
-                    self.last_log_time = (
-                        current_time  # Oppdaterer tidspunktet for sending
-                    )
-
-                    player_list_str = (
-                        "\n".join(player_names)
-                        if player_names
-                        else "No player names available."
-                    )
-
-                    log_embed = discord.Embed(
-                        title="📈 Server Population Alert",
-                        description=f"We have reached **{player_count}** players online!\n\n**Players:**\n{player_list_str}",
-                        color=discord.Color.green(),
-                        timestamp=current_time,
-                    )
-                    log_embed.set_footer(
-                        text=f"Milestone reached: {current_threshold}+ players"
-                    )
-
-                    try:
-                        await log_channel.send(embed=log_embed)
-                    except Exception as e:
-                        print(f"Error sending log message: {e}")
-
-                # Hvis spillerantallet faller under terskelen, resetter vi threshold
-                # slik at den er klar til å varsle når det stiger igjen (f.eks. fra 10 til 8)
-                elif current_threshold < self.last_logged_threshold:
-                    self.last_logged_threshold = current_threshold
 
         if is_online:
             if player_names:
