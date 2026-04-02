@@ -4,6 +4,8 @@ from aiomcrcon import Client
 from datetime import datetime
 import os
 import re
+import asyncio
+import traceback
 
 RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))
@@ -41,6 +43,7 @@ class ServerStatusCog(commands.Cog):
         self.last_player_count = 0
         self.last_logged_threshold = 0
         self.log_message_sent_time = None
+        self.consecutive_errors = 0
         self.update_status.start()
 
     def cog_unload(self):
@@ -48,6 +51,16 @@ class ServerStatusCog(commands.Cog):
 
     @tasks.loop(seconds=60)
     async def update_status(self):
+        try:
+            await self._do_status_update()
+            self.consecutive_errors = 0  # Reset on success
+        except Exception as e:
+            self.consecutive_errors += 1
+            print(f"⚠️ Status update error (attempt {self.consecutive_errors}): {e}")
+            traceback.print_exc()
+            # Don't re-raise - let the loop continue
+
+    async def _do_status_update(self):
         await self.bot.wait_until_ready()
 
         channel = self.bot.get_channel(STATUS_CHANNEL_ID)
@@ -206,6 +219,20 @@ class ServerStatusCog(commands.Cog):
     @update_status.before_loop
     async def before_update_status(self):
         await self.bot.wait_until_ready()
+
+    @update_status.error
+    async def update_status_error(self, error):
+        """Handle errors in the status update loop and restart it if needed."""
+        print(f"❌ Critical error in status loop: {error}")
+        traceback.print_exc()
+
+        # Wait a bit before restarting to avoid rapid restarts
+        await asyncio.sleep(30)
+
+        # Restart the task if it's not running
+        if not self.update_status.is_running():
+            print("🔄 Restarting status update loop...")
+            self.update_status.start()
 
 
 async def setup(bot):

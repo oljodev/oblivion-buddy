@@ -50,7 +50,9 @@ class RestartControl(commands.Cog):
                 # We don't 'await' the result of stop, because the server
                 # often cuts the connection before it can reply.
                 try:
-                    await asyncio.wait_for(client.send_cmd("stop"), timeout=5)
+                    await asyncio.wait_for(
+                        client.send_cmd("./minecraft-restart"), timeout=5
+                    )
                 except (asyncio.TimeoutError, Exception):
                     # This is expected behavior as the server process terminates
                     pass
