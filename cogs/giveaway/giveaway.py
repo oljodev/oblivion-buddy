@@ -17,6 +17,7 @@ GUILD_ID = discord.Object(id=1422932147550818507)
 OWNER_ROLE_ID = 1422933406873813254
 ADMIN_ROLE_ID = 1422937935988265090
 MEMBER_ROLE_ID = 1422937958897422406
+GIVEAWAY_STAFF_ROLE_ID = 1478824797378187507
 
 LOG_CHANNEL_ID = 1452598796377653331
 
@@ -369,10 +370,7 @@ class GiveawayCog(commands.Cog):
     @app_commands.command(name="giveaway", description="Create a giveaway.")
     @app_commands.guilds(GUILD_ID)
     async def giveaway_command(self, interaction: discord.Interaction):
-        allowed_roles = [
-            OWNER_ROLE_ID,
-            ADMIN_ROLE_ID,
-        ]
+        allowed_roles = [OWNER_ROLE_ID, ADMIN_ROLE_ID, GIVEAWAY_STAFF_ROLE_ID]
 
         if not any(role.id in allowed_roles for role in interaction.user.roles):
             await interaction.response.send_message(
