@@ -32,15 +32,20 @@ MEMBER_ROLE_ID = 1422937958897422406
 
 @bot.event
 async def on_member_join(member: discord.Member):
-    role = member.guild.get_role(MEMBER_ROLE_ID)
-    if role:
-        try:
-            await member.add_roles(role)
-            logger.info(f"Assigned role {role.name} to {member.name}")
-        except Exception as e:
-            logger.error(f"Could not assign role: {e}")
+    # Sjekk om det er et menneske (ikke en bot)
+    if not member.bot:
+        role = member.guild.get_role(MEMBER_ROLE_ID)
+        if role:
+            try:
+                await member.add_roles(role)
+                logger.info(f"Assigned role {role.name} to human user: {member.name}")
+            except Exception as e:
+                logger.error(f"Could not assign role to {member.name}: {e}")
+        else:
+            logger.warning("Member role not found!")
     else:
-        logger.warning("Role not found!")
+        # Hvis det er en bot, logger vi det bare (denne fanges opp av Cogen vi laget i forrige svar)
+        logger.info(f"App detected: {member.name}. Skipping auto-member role.")
 
 
 @bot.tree.command(name="help", description="Shows how to use the bot.", guild=GUILD_ID)
