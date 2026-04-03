@@ -250,7 +250,7 @@ class LevelingSystem(commands.Cog):
                     if role and role not in message.author.roles:
                         try:
                             await message.author.add_roles(role)
-                        except:
+                        except:  # noqa: E722
                             pass
 
         # Bruk låsen her!
@@ -328,7 +328,6 @@ class LevelingSystem(commands.Cog):
 
         # 3. Definer Fonts (Poppins er innebygd i easy-pil)
         # Bruker Regular variant, Bold for viktigere ting
-        font_large = Font.poppins(size=50, variant="regular")
         font_bold_lg = Font.poppins(size=50, variant="bold")
         font_medium = Font.poppins(size=35, variant="regular")
         font_small = Font.poppins(size=25, variant="regular")
