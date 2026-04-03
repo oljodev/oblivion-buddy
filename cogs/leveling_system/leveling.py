@@ -4,6 +4,7 @@ from discord import app_commands
 import json
 import os
 import math
+import asyncio
 import logging
 from datetime import datetime  # <-- NY: Trengs for cache-timing
 from easy_pil import Editor, load_image_async, Font  # <-- NY: Easy-pil imports
@@ -26,7 +27,7 @@ ROLE_MILESTONES = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100]
 XP_PER_MESSAGE = 10
 
 DATA_FOLDER = "./cogs/simple_stats/user_data"
-TRACKING_FILE = os.path.join(DATA_FOLDER, "level_tracking.json")
+TRACKING_FILE = "./cogs/leveling_system/level_tracking.json"
 
 BACKGROUND_IMAGE_PATH = "./cogs/leveling_system/leveling_image.png"
 
@@ -63,6 +64,7 @@ class LeaderboardView(discord.ui.View):
         self.items_per_page = 10
         self.max_pages = math.ceil(len(data) / self.items_per_page)
         self.update_buttons()
+        self.lock = asyncio.Lock()  # <-- NY: Legg til denne
 
     def update_buttons(self):
         self.btn_prev.disabled = self.current_page == 0
@@ -209,23 +211,37 @@ class LevelingSystem(commands.Cog):
                 return
 
         user_id_str = str(message.author.id)
+
+        # 1. Beregn nivå basert på nåværende meldinger
         messages_sent = self.get_user_messages(message.author.id)
         current_xp = messages_sent * XP_PER_MESSAGE
-        new_level = get_level_from_xp(current_xp)
+        target_level = get_level_from_xp(current_xp)
 
-        # Hent hvilket nivå vi SIST gratulerte brukeren for
-        last_announced_level = self.level_tracking.get(user_id_str, 0)
+        # 2. Hent sist annonserte nivå
+        # Vi henter det på nytt her for å være helt sikre på at vi har siste status
+        last_announced = self.level_tracking.get(user_id_str, 0)
 
-        if new_level > last_announced_level:
+        # 3. Hvis brukeren skal opp i nivå
+        if target_level > last_announced:
             announcement_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
 
-            # Loop gjennom alle nivåene som ikke er annonsert ennå
-            for lvl in range(last_announced_level + 1, new_level + 1):
-                # Send annonsering
+            for lvl in range(last_announced + 1, target_level + 1):
+                # Oppdaterer minnet med en gang så ingen andre prosesser tror de må sende samme level
+                self.level_tracking[user_id_str] = lvl
+                self.save_tracking_data()
+
                 if announcement_channel:
-                    await announcement_channel.send(
-                        f"🎉 Congrats {message.author.mention}! Your level is now **{lvl}**!"
-                    )
+                    try:
+                        await announcement_channel.send(
+                            f"🎉 Congrats {message.author.mention}! Your level is now **{lvl}**!"
+                        )
+                        # --- FIX 1: Pause ---
+                        # Vi legger inn 1 sekund pause så Discord får meldingene i rekkefølge
+                        import asyncio
+
+                        await asyncio.sleep(1.2)
+                    except Exception as e:
+                        logger.error(f"Kunne ikke sende melding: {e}")
 
                 # Gi roller
                 if lvl in ROLE_MILESTONES:
@@ -237,10 +253,30 @@ class LevelingSystem(commands.Cog):
                         except:
                             pass
 
-                # VIKTIG: Lagre umiddelbart etter hver melding!
-                # Dette forhindrer "dobbelt opp" hvis botten restarter midt i loopen.
-                self.level_tracking[user_id_str] = lvl
-                self.save_tracking_data()
+        # Bruk låsen her!
+        async with self.lock:
+            user_id_str = str(message.author.id)
+            messages_sent = self.get_user_messages(message.author.id)
+            current_xp = messages_sent * XP_PER_MESSAGE
+            target_level = get_level_from_xp(current_xp)
+
+            # Viktig: Last inn data på NYTT her inne for å få med siste endringer fra andre meldinger
+            self.level_tracking = self.load_tracking_data()
+            last_announced = self.level_tracking.get(user_id_str, 0)
+
+            if target_level > last_announced:
+                for lvl in range(last_announced + 1, target_level + 1):
+                    # 1. Oppdater og LAGRE med en gang!
+                    self.level_tracking[user_id_str] = lvl
+                    self.save_tracking_data()
+
+                    # 2. Send meldingen
+                    announcement_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+                    if announcement_channel:
+                        await announcement_channel.send(
+                            f"🎉 Congrats {message.author.mention}! Your level is now **{lvl}**!"
+                        )
+                        await asyncio.sleep(1)  # Liten pause så Discord ikke blir sint
 
     # --- Slash Commands ---
 
