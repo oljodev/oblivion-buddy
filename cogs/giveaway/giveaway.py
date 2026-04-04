@@ -131,6 +131,8 @@ class JoinGiveawayButton(discord.ui.View):
         self.image_url = image_url
         self.ended = False
 
+    def start_tasks(self):
+        """Starts the countdown manually."""
         self.finish_task = asyncio.create_task(self.wait_for_end())
 
     def disable_all_buttons(self):
@@ -154,6 +156,9 @@ class JoinGiveawayButton(discord.ui.View):
         result_text_lines = []
         dm_tasks = []
 
+        # SIKKERHET: Bruker serveren fra meldingen, ikke fra hosten (som kan være et User-objekt)
+        guild = self.message.guild
+
         if not self.entries:
             result_text = "No one entered the giveaway 😢"
         else:
@@ -170,7 +175,7 @@ class JoinGiveawayButton(discord.ui.View):
 
                 if idx < len(participants):
                     winner_id = participants[idx]
-                    winner = self.host.guild.get_member(winner_id)
+                    winner = guild.get_member(winner_id)
 
                     result_text_lines.append(
                         f"{emoji} **{prize_name}**: <@{winner_id}>"
@@ -179,7 +184,7 @@ class JoinGiveawayButton(discord.ui.View):
                     if winner:
                         dm_embed = discord.Embed(
                             title="🎉 You won a giveaway!",
-                            description=f"Congratulations! You won **{prize_name}** in the giveaway hosted on **{self.host.guild.name}**!\n\nPlease create a ticket in {self.host.guild.name} to claim your prize.",
+                            description=f"Congratulations! You won **{prize_name}** in the giveaway hosted on **{guild.name}**!\n\nPlease create a ticket in {guild.name} to claim your prize.",
                             color=discord.Color.gold(),
                         )
                         dm_tasks.append(winner.send(embed=dm_embed))
@@ -189,6 +194,18 @@ class JoinGiveawayButton(discord.ui.View):
                     )
 
             result_text = "\n".join(result_text_lines)
+
+        # Send DM to host about winners
+        try:
+            winner_dm = discord.Embed(
+                title="Giveaway Ended - Winners Selected",
+                description=result_text,
+                color=discord.Color.gold(),
+                timestamp=datetime.utcnow(),
+            )
+            await self.host.send(embed=winner_dm)
+        except discord.Forbidden:
+            pass
 
         # Update embed to gray
         ended_embed = discord.Embed(
@@ -271,6 +288,12 @@ class JoinGiveawayButton(discord.ui.View):
             )
             await log_channel.send(embed=embed_log)
 
+        # Send DM to host
+        try:
+            await self.host.send(embed=embed_log)
+        except discord.Forbidden:
+            pass  # Host has DMs closed
+
 
 class ConfirmationView(discord.ui.View):
     def __init__(
@@ -312,6 +335,7 @@ class ConfirmationView(discord.ui.View):
         # Post the actual giveaway to the channel
         msg = await interaction.channel.send(embed=self.embed, view=view)
         view.message = msg
+        view.start_tasks()  # <--- Start nedtellingen her
 
         # Persist data
         add_saved_giveaway(
@@ -332,6 +356,18 @@ class ConfirmationView(discord.ui.View):
             await interaction.channel.send(
                 f"{role.mention} 🎉 A new giveaway has started!"
             )
+
+        # Send DM to host that giveaway started
+        try:
+            start_dm = discord.Embed(
+                title="Giveaway Started",
+                description="Your giveaway has successfully started!",
+                color=discord.Color.blue(),
+                timestamp=datetime.utcnow(),
+            )
+            await interaction.user.send(embed=start_dm)
+        except discord.Forbidden:
+            pass
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
     async def cancel_btn(
@@ -500,6 +536,129 @@ class GiveawayCog(commands.Cog):
 
         await interaction.response.send_modal(GiveawayModal())
 
+    @app_commands.command(
+        name="reroll", description="Reroll winners for an ended giveaway."
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(message_id="The message ID of the giveaway to reroll")
+    async def reroll_command(self, interaction: discord.Interaction, message_id: str):
+        allowed_roles = [OWNER_ROLE_ID, ADMIN_ROLE_ID, GIVEAWAY_STAFF_ROLE_ID]
+
+        if not any(role.id in allowed_roles for role in interaction.user.roles):
+            return await interaction.response.send_message(
+                "🚫 You don't have permission to reroll giveaways.", ephemeral=True
+            )
+
+        try:
+            msg_id = int(message_id)
+        except ValueError:
+            return await interaction.response.send_message(
+                "Invalid message ID. Please provide a valid number.", ephemeral=True
+            )
+
+        # Find the message
+        channel = interaction.channel
+        try:
+            message = await channel.fetch_message(msg_id)
+        except discord.NotFound:
+            return await interaction.response.send_message(
+                "Message not found in this channel.", ephemeral=True
+            )
+        except Exception as e:
+            return await interaction.response.send_message(
+                f"Error fetching message: {e}", ephemeral=True
+            )
+
+        # Check if it's a giveaway message with view
+        if not hasattr(message, "view") or not isinstance(
+            message.view, JoinGiveawayButton
+        ):
+            return await interaction.response.send_message(
+                "This message is not a giveaway.", ephemeral=True
+            )
+
+        view = message.view
+        if not view.ended:
+            return await interaction.response.send_message(
+                "This giveaway is still active. Cannot reroll.", ephemeral=True
+            )
+
+        if not view.entries:
+            return await interaction.response.send_message(
+                "No entries to reroll.", ephemeral=True
+            )
+
+        # Check if user is the host or has permission
+        if interaction.user.id != view.host.id and not any(
+            role.id in allowed_roles for role in interaction.user.roles
+        ):
+            return await interaction.response.send_message(
+                "Only the host or staff can reroll this giveaway.", ephemeral=True
+            )
+
+        # Reroll winners
+        participants = list(view.entries)
+        random.shuffle(participants)
+
+        emojis = ["🥇", "🥈", "🥉", "🏅"]
+
+        reroll_text_lines = []
+        dm_tasks = []
+
+        reroll_text_lines.append(
+            "🔄 **Giveaway Rerolled! Here are the new winners:**\n"
+        )
+
+        guild = message.guild
+
+        for idx, prize_name in enumerate(view.prizes):
+            emoji = emojis[idx] if idx < 3 else emojis[-1]
+
+            if idx < len(participants):
+                winner_id = participants[idx]
+                winner = guild.get_member(winner_id)
+
+                reroll_text_lines.append(f"{emoji} **{prize_name}**: <@{winner_id}>")
+
+                if winner:
+                    dm_embed = discord.Embed(
+                        title="🎉 You won a giveaway (rerolled)!",
+                        description=f"Congratulations! You won **{prize_name}** in the rerolled giveaway hosted on **{guild.name}**!\n\nPlease create a ticket in {guild.name} to claim your prize.",
+                        color=discord.Color.gold(),
+                    )
+                    dm_tasks.append(winner.send(embed=dm_embed))
+            else:
+                reroll_text_lines.append(
+                    f"{emoji} **{prize_name}**: *Not enough participants*"
+                )
+
+        reroll_text = "\n".join(reroll_text_lines)
+
+        await message.channel.send(reroll_text)
+
+        # Send DMs
+        for task in dm_tasks:
+            try:
+                await task
+            except discord.Forbidden:
+                pass
+
+        # Send DM to host
+        try:
+            reroll_dm = discord.Embed(
+                title="Giveaway Rerolled",
+                description=reroll_text,
+                color=discord.Color.orange(),
+                timestamp=datetime.utcnow(),
+            )
+            await view.host.send(embed=reroll_dm)
+        except discord.Forbidden:
+            pass
+
+        await interaction.response.send_message(
+            "Giveaway rerolled successfully!", ephemeral=True
+        )
+
     @commands.Cog.listener()
     async def on_ready(self):
         if self._restored:
@@ -509,6 +668,8 @@ class GiveawayCog(commands.Cog):
         data = load_saved_giveaways()
         if not data:
             return
+
+        now = datetime.utcnow()
 
         for key, info in data.items():
             try:
@@ -543,9 +704,15 @@ class GiveawayCog(commands.Cog):
 
                 host = None
                 try:
-                    host = await self.bot.fetch_user(host_id)
+                    # Vi prøver å hente som Member først hvis vi kan
+                    host = message.guild.get_member(
+                        host_id
+                    ) or await message.guild.fetch_member(host_id)
                 except Exception:
-                    host = message.guild.get_member(host_id) or message.author
+                    try:
+                        host = await self.bot.fetch_user(host_id)
+                    except Exception:
+                        host = message.author
 
                 end_time = datetime.utcfromtimestamp(end_ts)
                 view = JoinGiveawayButton(
@@ -557,18 +724,27 @@ class GiveawayCog(commands.Cog):
                     image_url=image_url,
                 )
                 view.entries = entries
-                view.message = message
+                view.message = message  # Koble til meldingen FØRST
 
-                try:
-                    self.bot.add_view(view, message_id=message.id)
-                except Exception:
+                if end_time <= now:
+                    # Hvis tiden allerede er ute, avslutt den med en gang
+                    logger.info(
+                        f"Giveaway {message.id} expired while offline. Ending now..."
+                    )
+                    await view.end_giveaway()
+                else:
+                    # Hvis den fortsatt er aktiv, registrer viewet og start nedtelling
                     try:
-                        await message.edit(view=view)
+                        self.bot.add_view(view, message_id=message.id)
                     except Exception:
-                        pass
+                        try:
+                            await message.edit(view=view)
+                        except Exception:
+                            pass
 
-                self.active_giveaways[str(message.id)] = view
-                logger.info(f"Restored giveaway {message.id}")
+                    view.start_tasks()
+                    self.active_giveaways[str(message.id)] = view
+                    logger.info(f"Restored giveaway {message.id}")
             except Exception as e:
                 logger.error(f"Error while restoring giveaway {key}: {e}")
 
