@@ -133,6 +133,76 @@ class TicketModal(discord.ui.Modal):
         )
 
 
+class ClaimGiveawayModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Claim Giveaway")
+        self.reason_type = "ClaimGiveaway"
+
+        self.add_item(
+            discord.ui.TextInput(
+                label="Giveaway Hoster",
+                placeholder="Enter the hoster's user ID",
+                required=True,
+            )
+        )
+        self.add_item(
+            discord.ui.TextInput(
+                label="Your Prize",
+                placeholder="What did you win?",
+                required=True,
+            )
+        )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        # 1. Create the thread
+        target_channel = interaction.guild.get_channel(TICKET_CHANNEL_ID)
+        thread = await target_channel.create_thread(
+            name=f"{self.reason_type}-{interaction.user.name}",
+            type=discord.ChannelType.private_thread,
+        )
+
+        # 2. Save to JSON
+        data = load_data()
+        data["active_threads"].append(thread.id)
+        save_data(data)
+
+        # 3. Build the Summary Embed
+        embed = discord.Embed(
+            title=f"New Ticket: {self.reason_type}", color=discord.Color.green()
+        )
+        embed.set_author(
+            name=interaction.user.display_name,
+            icon_url=interaction.user.display_avatar.url,
+        )
+
+        for item in self.children:
+            embed.add_field(
+                name=item.label, value=item.value or "Not provided", inline=False
+            )
+
+        # 4. Pings
+        pings = " ".join(
+            [
+                f"<@&{r}>"
+                for r in [OWNER_ROLE_ID, ADMIN_ROLE_ID, HELPER_ROLE_ID]
+                if interaction.guild.get_role(r)
+            ]
+        )
+        hoster_id = self.children[0].value
+        hoster_ping = f"<@{hoster_id}>"
+
+        await thread.send(
+            content=f"{pings} {hoster_ping} {interaction.user.mention}",
+            embed=embed,
+            view=TicketControls(),
+        )
+        await interaction.followup.send(
+            f"✅ Ticket created! Go here: {thread.mention}", ephemeral=True
+        )
+
+
 # --- Dropdown View ---
 class TicketDropdown(discord.ui.Select):
     def __init__(self):
@@ -156,6 +226,12 @@ class TicketDropdown(discord.ui.Select):
                 value="Technical",
             ),
             discord.SelectOption(
+                label="Claim Giveaway",
+                description="Claim a giveaway prize",
+                emoji="🎉",
+                value="ClaimGiveaway",
+            ),
+            discord.SelectOption(
                 label="Other", description="Anything else", emoji="📝", value="Other"
             ),
         ]
@@ -175,6 +251,8 @@ class TicketDropdown(discord.ui.Select):
             await interaction.response.send_modal(
                 TicketModal("Technical Support", "Technical")
             )
+        elif self.values[0] == "ClaimGiveaway":
+            await interaction.response.send_modal(ClaimGiveawayModal())
         else:
             await interaction.response.send_modal(
                 TicketModal("Support Ticket", self.values[0])
