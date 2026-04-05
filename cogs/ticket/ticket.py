@@ -203,7 +203,76 @@ class ClaimGiveawayModal(discord.ui.Modal):
         )
 
 
-# --- Dropdown View ---
+class ReportBotBugModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Report Bot Bug")
+        self.reason_type = "ReportBotBug"
+
+        self.add_item(
+            discord.ui.TextInput(
+                label="Bug Description",
+                placeholder="Describe the bug/error...",
+                style=discord.TextStyle.paragraph,
+                required=True,
+            )
+        )
+        self.add_item(
+            discord.ui.TextInput(
+                label="Feature Affected",
+                placeholder="Which feature was affected?",
+                required=True,
+            )
+        )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        # 1. Create the thread
+        target_channel = interaction.guild.get_channel(TICKET_CHANNEL_ID)
+        thread = await target_channel.create_thread(
+            name=f"{self.reason_type}-{interaction.user.name}",
+            type=discord.ChannelType.private_thread,
+        )
+
+        # 2. Save to JSON
+        data = load_data()
+        data["active_threads"].append(thread.id)
+        save_data(data)
+
+        # 3. Build the Summary Embed
+        embed = discord.Embed(
+            title=f"New Ticket: {self.reason_type}", color=discord.Color.green()
+        )
+        embed.set_author(
+            name=interaction.user.display_name,
+            icon_url=interaction.user.display_avatar.url,
+        )
+
+        for item in self.children:
+            embed.add_field(
+                name=item.label, value=item.value or "Not provided", inline=False
+            )
+
+        # 4. Pings
+        pings = " ".join(
+            [
+                f"<@&{r}>"
+                for r in [OWNER_ROLE_ID, ADMIN_ROLE_ID, HELPER_ROLE_ID]
+                if interaction.guild.get_role(r)
+            ]
+        )
+
+        await thread.send(
+            content=f"{pings} {interaction.user.mention}",
+            embed=embed,
+            view=TicketControls(),
+        )
+        await thread.send("Please upload a screenshot of the error.")
+        await interaction.followup.send(
+            f"✅ Ticket created! Go here: {thread.mention}", ephemeral=True
+        )
+
+
 class TicketDropdown(discord.ui.Select):
     def __init__(self):
         options = [
@@ -232,6 +301,12 @@ class TicketDropdown(discord.ui.Select):
                 value="ClaimGiveaway",
             ),
             discord.SelectOption(
+                label="Report Bot Bug",
+                description="Report a bug with Oblivion Buddy",
+                emoji="🐛",
+                value="ReportBotBug",
+            ),
+            discord.SelectOption(
                 label="Other", description="Anything else", emoji="📝", value="Other"
             ),
         ]
@@ -253,6 +328,8 @@ class TicketDropdown(discord.ui.Select):
             )
         elif self.values[0] == "ClaimGiveaway":
             await interaction.response.send_modal(ClaimGiveawayModal())
+        elif self.values[0] == "ReportBotBug":
+            await interaction.response.send_modal(ReportBotBugModal())
         else:
             await interaction.response.send_modal(
                 TicketModal("Support Ticket", self.values[0])
