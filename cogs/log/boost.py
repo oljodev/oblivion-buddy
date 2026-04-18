@@ -1,8 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
-
-LOG_CHANNEL_ID = 1452598796377653331
+from channels import LOG_CHANNEL as LOG_CHANNEL_ID
 
 
 class BoostLogger(commands.Cog):

@@ -12,13 +12,10 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Giveaway")
 
-# Bot configuration (Update these with your real IDs)
-GUILD_ID = discord.Object(id=1422932147550818507)
-OWNER_ROLE_ID = 1422933406873813254
-ADMIN_ROLE_ID = 1422937935988265090
-MEMBER_ROLE_ID = 1422937958897422406
-GIVEAWAY_STAFF_ROLE_ID = 1478824797378187507
-LOG_CHANNEL_ID = 1452598796377653331
+from channels import GUILD_ID as _GUILD_ID, LOG_CHANNEL as LOG_CHANNEL_ID
+from roles import OWNER_ROLE_ID, ADMIN_ROLE_ID, MEMBER_ROLE_ID, GIVEAWAY_STAFF_ROLE_ID
+
+GUILD_ID = discord.Object(id=_GUILD_ID)
 
 # Persistence
 GIVEAWAYS_FILE = Path(__file__).parent / "giveaways.json"

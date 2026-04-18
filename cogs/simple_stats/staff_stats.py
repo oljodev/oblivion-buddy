@@ -7,8 +7,7 @@ import os
 
 logger = logging.getLogger("ServerTracker")
 
-STAFF_STATS_CHANNEL_ID = 1433549179942338570
-LOG_CHANNEL_ID = 1452598796377653331
+from channels import SIMPLE_STATS_CHANNEL as STAFF_STATS_CHANNEL_ID, LOG_CHANNEL as LOG_CHANNEL_ID
 
 STATS_FILE = "./cogs/simple_stats/staff_stats.json"
 

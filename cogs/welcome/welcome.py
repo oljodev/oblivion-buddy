@@ -3,6 +3,7 @@ from discord.ext import commands
 from easy_pil import Editor, load_image_async, Font
 import os
 import random
+from channels import WELCOME_CHANNEL
 
 
 class ServerGreetings(commands.Cog):
@@ -14,8 +15,7 @@ class ServerGreetings(commands.Cog):
     # ---------------------------------------------------------
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        channel_id = 1422933181497086122
-        channel = self.bot.get_channel(channel_id)
+        channel = self.bot.get_channel(WELCOME_CHANNEL)
 
         folder_path = "./cogs/welcome/welcome_images"
 
@@ -62,15 +62,14 @@ class ServerGreetings(commands.Cog):
             file = discord.File(fp=background.image_bytes, filename="welcome_card.jpg")
             await channel.send(f"Welcome to the server, {member.mention}!", file=file)
         else:
-            print(f"Could not find channel with ID {channel_id}")
+            print(f"Could not find channel with ID {WELCOME_CHANNEL}")
 
     # ---------------------------------------------------------
     # GOODBYE EVENT
     # ---------------------------------------------------------
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
-        channel_id = 1422933181497086122
-        channel = self.bot.get_channel(channel_id)
+        channel = self.bot.get_channel(WELCOME_CHANNEL)
 
         # 1. Path to your folder containing goodbye background images
         # Make sure to create this folder!
@@ -131,7 +130,7 @@ class ServerGreetings(commands.Cog):
                 f"Goodbye, {member.mention}. We hope to see you again!", file=file
             )
         else:
-            print(f"Could not find channel with ID {channel_id}")
+            print(f"Could not find channel with ID {WELCOME_CHANNEL}")
 
 
 async def setup(bot):

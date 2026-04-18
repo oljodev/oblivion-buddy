@@ -4,11 +4,13 @@ from aiomcrcon import Client, RCONConnectionError
 import asyncio
 
 # --- CONFIGURATION ---
+from roles import OWNER_ROLE_ID, ADMIN_ROLE_ID
+
 RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))
 RCON_PASSWORD = os.getenv("RCON_PASS", "secret")
 
-ALLOWED_ROLE_IDS = [1422933406873813254, 1422937935988265090]
+ALLOWED_ROLE_IDS = [OWNER_ROLE_ID, ADMIN_ROLE_ID]
 
 
 class RestartControl(commands.Cog):

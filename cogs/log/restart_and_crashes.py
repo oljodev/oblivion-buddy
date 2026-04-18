@@ -6,8 +6,7 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 load_dotenv()
-
-LOG_CHANNEL_ID = 1452598796377653331
+from channels import LOG_CHANNEL as LOG_CHANNEL_ID
 
 RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))

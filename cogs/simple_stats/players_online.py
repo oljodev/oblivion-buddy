@@ -11,10 +11,9 @@ RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))
 RCON_PASSWORD = os.getenv("RCON_PASS", "secret")
 
-LOG_CHANNEL_ID = 1452598796377653331
-STATS_CHANNEL_ID = 1433549179942338570
-
 logger = logging.getLogger(__name__)
+
+from channels import LOG_CHANNEL as LOG_CHANNEL_ID, SIMPLE_STATS_CHANNEL as STATS_CHANNEL_ID
 
 # Words that might appear in RCON response that are NOT names
 BLACKLIST_NAMES = {

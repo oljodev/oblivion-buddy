@@ -6,10 +6,11 @@ import os
 import re
 from datetime import datetime
 
+from channels import BOT_STAFF_CHANNEL as UPDATE_CHANNEL_ID
+from roles import MEMBER_ROLE_ID
+
 # Configuration
 MODPACK_ID = 1356927
-UPDATE_CHANNEL_ID = 1435347662982352926
-MEMBER_ROLE_ID = 1422937958897422406
 VERSION_FILE = "cogs/auto_curseforge_updates/last_version.json"
 CURSEFORGE_API_BASE = "https://api.curseforge.com/v1"
 

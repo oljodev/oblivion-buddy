@@ -7,11 +7,11 @@ import re
 import asyncio
 import traceback
 
+from channels import STATUS_CHANNEL as STATUS_CHANNEL_ID
+
 RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))
 RCON_PASS = os.getenv("RCON_PASS", "secret")
-
-STATUS_CHANNEL_ID = 1422934996976402442
 SERVER_NAME = "Oblivion SMP"
 
 # Keywords that should be filtered out from the player list

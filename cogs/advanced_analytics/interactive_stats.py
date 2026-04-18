@@ -3,12 +3,10 @@ from datetime import datetime, timezone, timedelta
 from discord.ext import commands, tasks
 from discord.ui import View, Button
 from cogs.advanced_analytics import analytics_core
+from channels import ADVANCED_STATS_CHANNEL as DISCORD_STATS_CHANNEL_ID
+from channels import ADVANCED_STATS_CHANNEL as MINECRAFT_STATS_CHANNEL_ID
 
 GMT2 = timezone(timedelta(hours=2))
-
-# --- KONFIGURASJON ---
-DISCORD_STATS_CHANNEL_ID = 1452612533490946088
-MINECRAFT_STATS_CHANNEL_ID = 1452612533490946088
 
 
 def get_sorted_dates():

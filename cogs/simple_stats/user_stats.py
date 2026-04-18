@@ -8,9 +8,11 @@ import logging
 
 logger = logging.getLogger("UserStats")
 
+from channels import GUILD_ID as _GUILD_ID
+
 DATA_FOLDER = "./cogs/simple_stats/user_data"
 
-GUILD_ID = discord.Object(id=1422932147550818507)
+GUILD_ID = discord.Object(id=_GUILD_ID)
 
 
 class UserStats(commands.Cog):

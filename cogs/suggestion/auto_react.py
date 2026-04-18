@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
-
-FORUM_CHANNEL_ID = 1435357404073033909
+from channels import SUGGESTIONS_CHANNEL as FORUM_CHANNEL_ID
 
 
 class Reactions(commands.Cog):

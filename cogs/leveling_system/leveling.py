@@ -8,6 +8,7 @@ import asyncio
 import logging
 from datetime import datetime  # <-- NY: Trengs for cache-timing
 from easy_pil import Editor, load_image_async, Font  # <-- NY: Easy-pil imports
+from channels import BOT_COMMANDS_CHANNEL as ANNOUNCEMENT_CHANNEL_ID, TICKET_CHANNEL, GUILD_ID as _GUILD_ID
 
 logger = logging.getLogger("LevelingSystem")
 
@@ -17,10 +18,9 @@ logger = logging.getLogger("LevelingSystem")
 
 TEST_MODE = False
 ADMIN_ROLES = ["Admin", "Owner"]  # Roles that can trigger XP in Test Mode
-ANNOUNCEMENT_CHANNEL_ID = 1467529230966460448  # Replace with your actual channel ID
-IGNORE_CHANNEL_IDS = [1422936354404302921]  # Add ticket/spam channel IDs here
+IGNORE_CHANNEL_IDS = [TICKET_CHANNEL]
 
-GUILD_ID = discord.Object(id=1422932147550818507)  # Your Guild ID
+GUILD_ID = discord.Object(id=_GUILD_ID)
 
 # Roles based on the provided image
 ROLE_MILESTONES = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100]

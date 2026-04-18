@@ -1,13 +1,10 @@
 import discord
 from discord.ext import commands
 import logging
+from channels import MODERATION_CHANNEL as LOG_CHANNEL_ID
+from roles import BOT_ROLE_ID
 
 logger = logging.getLogger(__name__)
-
-# --- KONFIGURASJON ---
-LOG_CHANNEL_ID = 1435357010500780052  # ID til kanalen der embeden skal sendes
-BOT_ROLE_ID = 1422937956079112232  # ID til "Bot"-rollen som gir tilgang
-# ---------------------
 
 
 class DeclineDropdown(discord.ui.Select):
