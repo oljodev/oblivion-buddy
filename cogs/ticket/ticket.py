@@ -7,6 +7,7 @@ TICKET_CHANNEL_ID = Channel.TICKET
 OWNER_ROLE_ID = Role.OWNER
 ADMIN_ROLE_ID = Role.ADMIN
 HELPER_ROLE_ID = Role.HELPER
+GIVEAWAY_STAFF_ROLE_ID = Role.GIVEAWAY_STAFF
 
 DATA_FILE = Path(__file__).parent / "tickets.json"
 
@@ -139,13 +140,6 @@ class ClaimGiveawayModal(discord.ui.Modal):
 
         self.add_item(
             discord.ui.TextInput(
-                label="Giveaway Hoster",
-                placeholder="Enter the hoster's user ID",
-                required=True,
-            )
-        )
-        self.add_item(
-            discord.ui.TextInput(
                 label="Your Prize",
                 placeholder="What did you win?",
                 required=True,
@@ -185,15 +179,12 @@ class ClaimGiveawayModal(discord.ui.Modal):
         pings = " ".join(
             [
                 f"<@&{r}>"
-                for r in [OWNER_ROLE_ID, ADMIN_ROLE_ID, HELPER_ROLE_ID]
+                for r in [OWNER_ROLE_ID, ADMIN_ROLE_ID, GIVEAWAY_STAFF_ROLE_ID]
                 if interaction.guild.get_role(r)
             ]
         )
-        hoster_id = self.children[0].value
-        hoster_ping = f"<@{hoster_id}>"
-
         await thread.send(
-            content=f"{pings} {hoster_ping} {interaction.user.mention}",
+            content=f"{pings} {interaction.user.mention}",
             embed=embed,
             view=TicketControls(),
         )
