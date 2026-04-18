@@ -6,8 +6,9 @@ import os
 import re
 from datetime import datetime
 
-from channels import BOT_STAFF_CHANNEL as UPDATE_CHANNEL_ID
-from roles import MEMBER_ROLE_ID
+from config import Channel, Role
+UPDATE_CHANNEL_ID = Channel.BOT_STAFF
+MEMBER_ROLE_ID = Role.MEMBER
 
 # Configuration
 MODPACK_ID = 1356927

@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
-from channels import SUGGESTIONS_CHANNEL as FORUM_CHANNEL_ID
+from config import Channel
+FORUM_CHANNEL_ID = Channel.SUGGESTIONS
 
 
 class Reactions(commands.Cog):

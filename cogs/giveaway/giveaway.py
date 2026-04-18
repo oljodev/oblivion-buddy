@@ -12,10 +12,14 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Giveaway")
 
-from channels import GUILD_ID as _GUILD_ID, LOG_CHANNEL as LOG_CHANNEL_ID
-from roles import OWNER_ROLE_ID, ADMIN_ROLE_ID, MEMBER_ROLE_ID, GIVEAWAY_STAFF_ROLE_ID
+from config import GUILD_ID as _GUILD_ID, Channel, Role
 
 GUILD_ID = discord.Object(id=_GUILD_ID)
+OWNER_ROLE_ID = Role.OWNER
+ADMIN_ROLE_ID = Role.ADMIN
+MEMBER_ROLE_ID = Role.MEMBER
+GIVEAWAY_STAFF_ROLE_ID = Role.GIVEAWAY_STAFF
+LOG_CHANNEL_ID = Channel.LOG
 
 # Persistence
 GIVEAWAYS_FILE = Path(__file__).parent / "giveaways.json"

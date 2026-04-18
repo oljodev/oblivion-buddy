@@ -7,12 +7,13 @@ import logging
 import json
 import os
 import asyncio
-from channels import GUILD_ID as _GUILD_ID
-from roles import OWNER_ROLE_ID, ADMIN_ROLE_ID
+from config import GUILD_ID as _GUILD_ID, Role
 
 logger = logging.getLogger("Polls")
 
 GUILD_ID = discord.Object(id=_GUILD_ID)
+OWNER_ROLE_ID = Role.OWNER
+ADMIN_ROLE_ID = Role.ADMIN
 
 POLL_STATE_FILE = "/home/olav/dev/oblivion-buddy/cogs/poll/polls.json"
 

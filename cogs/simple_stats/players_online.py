@@ -13,7 +13,9 @@ RCON_PASSWORD = os.getenv("RCON_PASS", "secret")
 
 logger = logging.getLogger(__name__)
 
-from channels import LOG_CHANNEL as LOG_CHANNEL_ID, SIMPLE_STATS_CHANNEL as STATS_CHANNEL_ID
+from config import Channel
+LOG_CHANNEL_ID = Channel.LOG
+STATS_CHANNEL_ID = Channel.SIMPLE_STATS
 
 # Words that might appear in RCON response that are NOT names
 BLACKLIST_NAMES = {

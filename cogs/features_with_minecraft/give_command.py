@@ -1,7 +1,7 @@
 from discord.ext import commands
 import os
 from aiomcrcon import Client
-from roles import OWNER_ROLE_ID, ADMIN_ROLE_ID
+from config import Role
 
 
 class RconItemGiver(commands.Cog):
@@ -11,8 +11,8 @@ class RconItemGiver(commands.Cog):
         # --- KONFIGURASJON ---
 
         # 1. Rolle-IDer som har lov til å bruke kommandoen
-        self.ALLOWED_ROLE_ID_1 = OWNER_ROLE_ID
-        self.ALLOWED_ROLE_ID_2 = ADMIN_ROLE_ID
+        self.ALLOWED_ROLE_ID_1 = Role.OWNER
+        self.ALLOWED_ROLE_ID_2 = Role.ADMIN
 
         # 2. RCON Innstillinger (Hentes fra miljøvariabler)
         self.RCON_IP = os.getenv("RCON_IP", "localhost")

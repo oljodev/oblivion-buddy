@@ -2,8 +2,11 @@ import discord
 from discord.ext import commands
 from pathlib import Path
 import json
-from channels import TICKET_CHANNEL as TICKET_CHANNEL_ID
-from roles import OWNER_ROLE_ID, ADMIN_ROLE_ID, HELPER_ROLE_ID
+from config import Channel, Role
+TICKET_CHANNEL_ID = Channel.TICKET
+OWNER_ROLE_ID = Role.OWNER
+ADMIN_ROLE_ID = Role.ADMIN
+HELPER_ROLE_ID = Role.HELPER
 
 DATA_FILE = Path(__file__).parent / "tickets.json"
 

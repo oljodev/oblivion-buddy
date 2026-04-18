@@ -2,7 +2,8 @@ import discord
 from discord.ext import commands, tasks
 from datetime import time, timezone
 from cogs.advanced_analytics import analytics_core
-from channels import LOG_CHANNEL as REPORT_CHANNEL_ID
+from config import Channel
+REPORT_CHANNEL_ID = Channel.LOG
 
 
 class DailyScore(commands.Cog):

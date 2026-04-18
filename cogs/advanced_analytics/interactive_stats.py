@@ -3,8 +3,9 @@ from datetime import datetime, timezone, timedelta
 from discord.ext import commands, tasks
 from discord.ui import View, Button
 from cogs.advanced_analytics import analytics_core
-from channels import ADVANCED_STATS_CHANNEL as DISCORD_STATS_CHANNEL_ID
-from channels import ADVANCED_STATS_CHANNEL as MINECRAFT_STATS_CHANNEL_ID
+from config import Channel
+DISCORD_STATS_CHANNEL_ID = Channel.ADVANCED_STATS
+MINECRAFT_STATS_CHANNEL_ID = Channel.ADVANCED_STATS
 
 GMT2 = timezone(timedelta(hours=2))
 

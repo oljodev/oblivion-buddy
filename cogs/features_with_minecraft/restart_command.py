@@ -4,7 +4,9 @@ from aiomcrcon import Client, RCONConnectionError
 import asyncio
 
 # --- CONFIGURATION ---
-from roles import OWNER_ROLE_ID, ADMIN_ROLE_ID
+from config import Role
+OWNER_ROLE_ID = Role.OWNER
+ADMIN_ROLE_ID = Role.ADMIN
 
 RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))

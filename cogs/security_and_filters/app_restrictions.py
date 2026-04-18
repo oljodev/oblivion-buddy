@@ -1,8 +1,9 @@
 import discord
 from discord.ext import commands
 import logging
-from channels import MODERATION_CHANNEL as LOG_CHANNEL_ID
-from roles import BOT_ROLE_ID
+from config import Channel, Role
+LOG_CHANNEL_ID = Channel.MODERATION
+BOT_ROLE_ID = Role.BOT
 
 logger = logging.getLogger(__name__)
 

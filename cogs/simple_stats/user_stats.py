@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger("UserStats")
 
-from channels import GUILD_ID as _GUILD_ID
+from config import GUILD_ID as _GUILD_ID
 
 DATA_FOLDER = "./cogs/simple_stats/user_data"
 

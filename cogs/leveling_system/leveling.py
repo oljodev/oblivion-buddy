@@ -8,7 +8,7 @@ import asyncio
 import logging
 from datetime import datetime  # <-- NY: Trengs for cache-timing
 from easy_pil import Editor, load_image_async, Font  # <-- NY: Easy-pil imports
-from channels import BOT_COMMANDS_CHANNEL as ANNOUNCEMENT_CHANNEL_ID, TICKET_CHANNEL, GUILD_ID as _GUILD_ID
+from config import Channel, GUILD_ID as _GUILD_ID
 
 logger = logging.getLogger("LevelingSystem")
 
@@ -18,7 +18,8 @@ logger = logging.getLogger("LevelingSystem")
 
 TEST_MODE = False
 ADMIN_ROLES = ["Admin", "Owner"]  # Roles that can trigger XP in Test Mode
-IGNORE_CHANNEL_IDS = [TICKET_CHANNEL]
+ANNOUNCEMENT_CHANNEL_ID = Channel.BOT_COMMANDS
+IGNORE_CHANNEL_IDS = [Channel.TICKET]
 
 GUILD_ID = discord.Object(id=_GUILD_ID)
 
