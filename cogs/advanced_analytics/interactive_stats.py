@@ -1,8 +1,10 @@
 import discord
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from discord.ext import commands, tasks
 from discord.ui import View, Button
 from cogs.advanced_analytics import analytics_core
+
+GMT2 = timezone(timedelta(hours=2))
 
 # --- KONFIGURASJON ---
 DISCORD_STATS_CHANNEL_ID = 1452612533490946088
@@ -73,6 +75,19 @@ class HistoryView(View):
             if len(m["unique_logins"]) > 0:
                 avg_mins = (m["total_playtime_checks"] * 15) / len(m["unique_logins"])
 
+            # Activity % for this day (GMT+2)
+            active_slots = m.get("active_slots", 0)
+            today_gmt2 = datetime.now(GMT2).strftime("%Y-%m-%d")
+            if date_str == today_gmt2:
+                now_gmt2 = datetime.now(GMT2)
+                elapsed_minutes = now_gmt2.hour * 60 + now_gmt2.minute
+            else:
+                elapsed_minutes = 1440
+            if elapsed_minutes > 0:
+                activity_pct = min((active_slots * 15 / elapsed_minutes) * 100, 100)
+            else:
+                activity_pct = 0.0
+
             embed = discord.Embed(
                 title=f"⛏️ Minecraft Statistikk: {date_str}",
                 color=discord.Color.green(),
@@ -86,6 +101,11 @@ class HistoryView(View):
             )
             embed.add_field(
                 name="Snitt Spilletid", value=f"{int(avg_mins)} min", inline=True
+            )
+            embed.add_field(
+                name="Server Aktivitet",
+                value=f"{activity_pct:.1f}% av dagen hadde spillere online",
+                inline=False,
             )
 
             p_list = ", ".join(m["unique_logins"])

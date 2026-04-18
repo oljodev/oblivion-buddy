@@ -10,6 +10,40 @@ RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))
 RCON_PASSWORD = os.getenv("RCON_PASS", "secret")
 
+BLACKLIST_NAMES = {
+    "there", "are", "of", "a", "max", "players", "online", "server",
+    "info", "list", "connected", "max", "joined", "left",
+}
+
+
+def _parse_player_list(response) -> list[str]:
+    """Parse RCON 'list' response into valid player names."""
+    if isinstance(response, (tuple, list)):
+        text = str(response[0])
+    else:
+        text = str(response) if response else ""
+
+    match = re.search(r"online:?\s*(.*)", text, re.IGNORECASE)
+    raw = match.group(1) if match else text
+
+    players = []
+    for token in re.split(r"[,\s]+", raw):
+        name = re.sub(r"^[^A-Za-z0-9_]+|[^A-Za-z0-9_]+$", "", token)
+        if (
+            2 <= len(name) <= 20
+            and not name.isdigit()
+            and name.lower() not in BLACKLIST_NAMES
+        ):
+            players.append(name)
+
+    seen = set()
+    unique = []
+    for n in players:
+        if n.lower() not in seen:
+            seen.add(n.lower())
+            unique.append(n)
+    return unique
+
 
 class DataCollector(commands.Cog):
     def __init__(self, bot):
@@ -67,13 +101,7 @@ class DataCollector(commands.Cog):
             async with Client(RCON_IP, RCON_PORT, RCON_PASSWORD) as client:
                 response = await client.send_cmd("list")
 
-                # Parse players (Simple regex for "online: name, name")
-                # Adjust regex if your server output is different
-                match = re.search(r"online:?\s*(.*)", response, re.IGNORECASE)
-                players = []
-                if match and match.group(1):
-                    raw = match.group(1).replace(",", " ")
-                    players = [p.strip() for p in raw.split() if p.strip()]
+                players = _parse_player_list(response)
 
                 data = analytics_core.ensure_today_exists()
                 today = analytics_core.get_today_str()
@@ -88,8 +116,12 @@ class DataCollector(commands.Cog):
                 for p in players:
                     if p not in mc_data["unique_logins"]:
                         mc_data["unique_logins"].append(p)
-                    # Add 15 mins of "playtime points" (1 check = 15 mins)
                     mc_data["total_playtime_checks"] += 1
+
+                # 3. Active slots (at least 1 player was online this poll)
+                if players:
+                    mc_data.setdefault("active_slots", 0)
+                    mc_data["active_slots"] += 1
 
                 analytics_core.save_data(data)
 

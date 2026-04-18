@@ -42,6 +42,7 @@ def ensure_today_exists():
                 "peak_players": 0,
                 "unique_logins": [],  # list of player names
                 "total_playtime_checks": 0,  # increments every 15 mins per player
+                "active_slots": 0,  # 15-min polls where at least 1 player was online
             },
         }
         save_data(data)
