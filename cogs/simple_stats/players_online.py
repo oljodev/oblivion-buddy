@@ -62,6 +62,8 @@ class PlayersOnline(commands.Cog):
                         "announced_milestones": [],
                         "announced_last24_milestones": [],
                         "announced_last72_milestones": [],
+                        "announced_last7d_milestones": [],
+                        "announced_last14d_milestones": [],
                     },
                     f,
                 )
@@ -78,6 +80,8 @@ class PlayersOnline(commands.Cog):
         self.storage.setdefault("announced_milestones", [])
         self.storage.setdefault("announced_last24_milestones", [])
         self.storage.setdefault("announced_last72_milestones", [])
+        self.storage.setdefault("announced_last7d_milestones", [])
+        self.storage.setdefault("announced_last14d_milestones", [])
 
     def _save_storage(self):
         tmp = self.storage_path + ".tmp"
@@ -150,6 +154,8 @@ class PlayersOnline(commands.Cog):
         players = self.storage.get("players", {}) or {}
         last24 = []
         last72 = []
+        last7d = []
+        last14d = []
         all_time = []
 
         for name, ts in players.items():
@@ -160,13 +166,17 @@ class PlayersOnline(commands.Cog):
                     last24.append(name)
                 if age_hours <= 72:
                     last72.append(name)
+                if age_hours <= 168:
+                    last7d.append(name)
+                if age_hours <= 336:
+                    last14d.append(name)
             except ValueError:
                 continue
 
         def sort_nocase(lst):
             return sorted(lst, key=lambda s: s.lower())
 
-        return sort_nocase(last24), sort_nocase(last72), sort_nocase(all_time)
+        return sort_nocase(last24), sort_nocase(last72), sort_nocase(last7d), sort_nocase(last14d), sort_nocase(all_time)
 
     def _get_next_milestone(self, current_count):
         """Get the next milestone if current_count has reached one (50, 75, 100, 125, ...)"""
@@ -190,7 +200,7 @@ class PlayersOnline(commands.Cog):
             colour=discord.Colour.green(),
             timestamp=now,
         )
-        last24, last72, all_time = self._categorize_players()
+        last24, last72, last7d, last14d, all_time = self._categorize_players()
 
         # Use comma separation instead of newlines to save space
         def fmt(names):
@@ -208,9 +218,12 @@ class PlayersOnline(commands.Cog):
         embed.add_field(
             name=f"Last 72 Hours ({len(last72)})", value=fmt(last72), inline=False
         )
-        # Using inline=False generally looks better for wide lists of names
-
-        # Optional: Only show all time count, or a truncated list if huge
+        embed.add_field(
+            name=f"Last 7 Days ({len(last7d)})", value=fmt(last7d), inline=False
+        )
+        embed.add_field(
+            name=f"Last 14 Days ({len(last14d)})", value=fmt(last14d), inline=False
+        )
         embed.add_field(
             name=f"All Time Unique ({len(all_time)})", value=fmt(all_time), inline=False
         )
@@ -237,6 +250,12 @@ class PlayersOnline(commands.Cog):
         elif category == "last72":
             title = "🎉 Last 72 Hours Milestone Reached!"
             description = f"The server has had **{milestone_count}** unique players in the last 72 hours!"
+        elif category == "last7d":
+            title = "🎉 Last 7 Days Milestone Reached!"
+            description = f"The server has had **{milestone_count}** unique players in the last 7 days!"
+        elif category == "last14d":
+            title = "🎉 Last 14 Days Milestone Reached!"
+            description = f"The server has had **{milestone_count}** unique players in the last 14 days!"
         else:  # all_time
             title = "🎉 Unique Players Milestone Reached!"
             description = (
@@ -291,10 +310,12 @@ class PlayersOnline(commands.Cog):
         }
 
         # Get player counts for all categories
-        last24, last72, all_time = self._categorize_players()
+        last24, last72, last7d, last14d, all_time = self._categorize_players()
         all_time_count = len(all_time)
         last24_count = len(last24)
         last72_count = len(last72)
+        last7d_count = len(last7d)
+        last14d_count = len(last14d)
 
         # Check for all-time milestone achievements
         announced_milestones = self.storage.setdefault("announced_milestones", [])
@@ -319,6 +340,22 @@ class PlayersOnline(commands.Cog):
             await self._send_milestone_announcement(milestone_72, category="last72")
             announced_last72.append(milestone_72)
             self.storage["announced_last72_milestones"] = announced_last72
+
+        # Check for last 7 days milestone achievements
+        announced_last7d = self.storage.setdefault("announced_last7d_milestones", [])
+        milestone_7d = self._get_next_10_milestone(last7d_count)
+        if milestone_7d and milestone_7d not in announced_last7d:
+            await self._send_milestone_announcement(milestone_7d, category="last7d")
+            announced_last7d.append(milestone_7d)
+            self.storage["announced_last7d_milestones"] = announced_last7d
+
+        # Check for last 14 days milestone achievements
+        announced_last14d = self.storage.setdefault("announced_last14d_milestones", [])
+        milestone_14d = self._get_next_10_milestone(last14d_count)
+        if milestone_14d and milestone_14d not in announced_last14d:
+            await self._send_milestone_announcement(milestone_14d, category="last14d")
+            announced_last14d.append(milestone_14d)
+            self.storage["announced_last14d_milestones"] = announced_last14d
 
         embed = self._build_embed()
         channel = self.bot.get_channel(STATS_CHANNEL_ID)
