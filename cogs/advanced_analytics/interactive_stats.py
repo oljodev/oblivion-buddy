@@ -19,14 +19,14 @@ def get_sorted_dates():
 
 class HistoryView(View):
     def __init__(self, mode, current_date_index):
-        super().__init__(timeout=None)  # Gjør knappene permanente
+        super().__init__(timeout=None)  # Make buttons permanent
         self.mode = mode
         self.index = current_date_index
         self.dates = get_sorted_dates()
         self.update_buttons()
 
     def update_buttons(self):
-        # Disabler knapper hvis man er på start/slutt av historikken
+        # Disable buttons when at the start/end of history
         self.children[0].disabled = self.index == 0
         self.children[1].disabled = self.index == len(self.dates) - 1
 
@@ -49,23 +49,23 @@ class HistoryView(View):
             )
 
             embed = discord.Embed(
-                title=f"📊 Discord Statistikk: {date_str}",
+                title=f"📊 Discord Statistics: {date_str}",
                 color=discord.Color.blurple(),
                 timestamp=datetime.now(),
             )
             embed.add_field(
-                name="Meldinger", value=str(d["total_messages"]), inline=True
+                name="Messages", value=str(d["total_messages"]), inline=True
             )
             embed.add_field(
-                name="Aktive i chat", value=str(len(d["unique_chatters"])), inline=True
+                name="Active in chat", value=str(len(d["unique_chatters"])), inline=True
             )
-            embed.add_field(name="Nye medlemmer", value=str(d["joins"]), inline=True)
+            embed.add_field(name="New members", value=str(d["joins"]), inline=True)
             embed.add_field(
-                name="🏆 Topp 10 Chatters",
-                value=top_list if top_list else "Ingen data",
+                name="🏆 Top 10 Chatters",
+                value=top_list if top_list else "No data",
                 inline=False,
             )
-            embed.set_footer(text=f"Side {self.index + 1} av {len(self.dates)}")
+            embed.set_footer(text=f"Page {self.index + 1} of {len(self.dates)}")
             return embed
 
         elif self.mode == "minecraft":
@@ -88,42 +88,42 @@ class HistoryView(View):
                 activity_pct = 0.0
 
             embed = discord.Embed(
-                title=f"⛏️ Minecraft Statistikk: {date_str}",
+                title=f"⛏️ Minecraft Statistics: {date_str}",
                 color=discord.Color.green(),
                 timestamp=datetime.now(),
             )
             embed.add_field(
-                name="Peak Spillere", value=str(m["peak_players"]), inline=True
+                name="Peak Players", value=str(m["peak_players"]), inline=True
             )
             embed.add_field(
-                name="Unike Logins", value=str(len(m["unique_logins"])), inline=True
+                name="Unique Logins", value=str(len(m["unique_logins"])), inline=True
             )
             embed.add_field(
-                name="Snitt Spilletid", value=f"{int(avg_mins)} min", inline=True
+                name="Avg Playtime", value=f"{int(avg_mins)} min", inline=True
             )
             embed.add_field(
-                name="Server Aktivitet",
-                value=f"{activity_pct:.1f}% av dagen hadde spillere online",
+                name="Server Activity",
+                value=f"{activity_pct:.1f}% of the day had players online",
                 inline=False,
             )
 
             p_list = ", ".join(m["unique_logins"])
             embed.add_field(
-                name="Spillere som var på",
-                value=p_list if p_list else "Ingen",
+                name="Players online",
+                value=p_list if p_list else "None",
                 inline=False,
             )
-            embed.set_footer(text=f"Side {self.index + 1} av {len(self.dates)}")
+            embed.set_footer(text=f"Page {self.index + 1} of {len(self.dates)}")
             return embed
 
-    @discord.ui.button(label="◀ Forrige", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.gray)
     async def prev(self, interaction: discord.Interaction, button: Button):
         if self.index > 0:
             self.index -= 1
             self.update_buttons()
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-    @discord.ui.button(label="Neste ▶", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.gray)
     async def next(self, interaction: discord.Interaction, button: Button):
         self.dates = get_sorted_dates()
         if self.index < len(self.dates) - 1:
@@ -139,7 +139,7 @@ class InteractiveStats(commands.Cog):
 
     @tasks.loop(minutes=15)
     async def auto_update(self):
-        """Oppdaterer embeden hvert 15. minutt for å vise live data for i dag"""
+        """Updates the embed every 15 minutes to show live data for today"""
         await self.bot.wait_until_ready()
 
         data = analytics_core.load_data()
@@ -152,9 +152,9 @@ class InteractiveStats(commands.Cog):
 
         latest_idx = len(dates) - 1
 
-        # Oppdater Discord-melding
+        # Update Discord message
         await self.sync_message("discord", DISCORD_STATS_CHANNEL_ID, latest_idx)
-        # Oppdater Minecraft-melding
+        # Update Minecraft message
         await self.sync_message("minecraft", MINECRAFT_STATS_CHANNEL_ID, latest_idx)
 
     async def sync_message(self, mode, channel_id, latest_idx):

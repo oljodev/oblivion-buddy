@@ -69,7 +69,7 @@ class ServerStatusCog(commands.Cog):
             print("⚠️ Could not find the status channel.")
             return
 
-        # --- PRØV Å HENTE SERVERDATA ---
+        # --- FETCH SERVER DATA ---
         try:
             async with Client(RCON_IP, RCON_PORT, RCON_PASS) as client:
                 response = await client.send_cmd("list")
@@ -78,7 +78,7 @@ class ServerStatusCog(commands.Cog):
             response = None
             is_online = False
 
-        # --- PARSE SPILLERDATA ---
+        # --- PARSE PLAYER DATA ---
         player_names = []
         player_count = 0
         max_players = 0
@@ -148,7 +148,7 @@ class ServerStatusCog(commands.Cog):
                 player_names = []
                 player_count = 0
 
-        # --- LAG EMBED ---
+        # --- BUILD EMBED ---
         color = discord.Color.green() if is_online else discord.Color.red()
         icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
@@ -191,7 +191,7 @@ class ServerStatusCog(commands.Cog):
 
         embed.set_footer(text="Updates every 60 seconds")
 
-        # --- SEND ELLER OPPDATER MELDING ---
+        # --- SEND OR UPDATE MESSAGE ---
         if not self.status_message:
             async for msg in channel.history(limit=10):
                 if msg.author == self.bot.user and msg.embeds:
@@ -206,7 +206,7 @@ class ServerStatusCog(commands.Cog):
         else:
             self.status_message = await channel.send(embed=embed)
 
-        # --- OPPDATER BOT STATUS (ACTIVITY) ---
+        # --- UPDATE BOT STATUS (ACTIVITY) ---
         if is_online:
             activity_name = f"{SERVER_NAME} with {player_count} players"
             activity = discord.Game(name=activity_name)

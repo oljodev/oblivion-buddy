@@ -8,55 +8,55 @@ class RconItemGiver(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        # --- KONFIGURASJON ---
+        # --- CONFIGURATION ---
 
-        # 1. Rolle-IDer som har lov til å bruke kommandoen
+        # 1. Role IDs allowed to use the command
         self.ALLOWED_ROLE_ID_1 = Role.OWNER
         self.ALLOWED_ROLE_ID_2 = Role.ADMIN
 
-        # 2. RCON Innstillinger (Hentes fra miljøvariabler)
+        # 2. RCON settings (loaded from environment variables)
         self.RCON_IP = os.getenv("RCON_IP", "localhost")
         self.RCON_PORT = int(os.getenv("RCON_PORT", 25575))
         self.RCON_PASSWORD = os.getenv("RCON_PASS", "secret")
 
-        # 3. Standard prefiks for items, for enkelhets skyld
+        # 3. Default item prefix for convenience
         self.DEFAULT_PREFIX = "minecraft:"
 
     @commands.command(name="give")
     async def give_item(self, ctx, username: str, item_name: str, amount: int):
         """
-        Gir spesifiserte items til en Minecraft-spiller.
-        Bruk: !give <MinecraftNavn> <ItemID/ItemAlias> <antall>
-        Eksempel: !give kruk02 diamond_sword 1
+        Gives specified items to a Minecraft player.
+        Usage: !give <MinecraftName> <ItemID/ItemAlias> <amount>
+        Example: !give kruk02 diamond_sword 1
         """
 
-        # 1. AUTORISASJONSSJEKK
+        # 1. AUTHORIZATION CHECK
         user_role_ids = [role.id for role in ctx.author.roles]
         required_roles = [self.ALLOWED_ROLE_ID_1, self.ALLOWED_ROLE_ID_2]
 
         if not any(role_id in user_role_ids for role_id in required_roles):
-            # Ignorerer kommandoen totalt for uautoriserte brukere
+            # Silently ignore the command for unauthorized users
             return
 
-        # 2. FORMATER ITEM NAVNET
-        # Legg til "minecraft:" prefiks hvis det mangler
+        # 2. FORMAT ITEM NAME
+        # Add "minecraft:" prefix if missing
         final_item_name = item_name
         if ":" not in final_item_name:
             final_item_name = f"{self.DEFAULT_PREFIX}{final_item_name}"
 
-        # 3. UTFØR RCON-KOMMANDO
+        # 3. EXECUTE RCON COMMAND
         try:
             client = Client(self.RCON_IP, self.RCON_PORT, self.RCON_PASSWORD)
             await client.connect()
 
-            # Kommandoen blir: "give <bruker> <item_navn> <antall>"
+            # Command becomes: "give <user> <item_name> <amount>"
             command = f"give {username} {final_item_name} {amount}"
             response = await client.send_cmd(command)
 
             await client.close()
 
-            # 4. HÅNDTER RESPONS OG FEILMELDING (Med RCON-fiksen)
-            # Sjekker den første delen av responsen for å håndtere aiomcrcon's tuple-format
+            # 4. HANDLE RESPONSE AND ERRORS (with RCON fix)
+            # Check the first part of the response to handle aiomcrcon's tuple format
             response_message = response[0] if isinstance(response, tuple) else response
 
             if (
@@ -69,13 +69,13 @@ class RconItemGiver(commands.Cog):
                     f"✅ **Success:** Gave **{amount}x {final_item_name}** to **{username}**."
                 )
             else:
-                # MINECRAFT FEILMELDING (f.eks. Ukjent spiller, Ukjent item)
+                # MINECRAFT ERROR (e.g. unknown player, unknown item)
                 await ctx.send(
                     f"⚠️ **Minecraft responded with an error:** `{response_message}`"
                 )
 
         except Exception as e:
-            # RCON TILKOBLINGSFEIL
+            # RCON CONNECTION ERROR
             await ctx.send(
                 f"❌ **RCON Connection Error:** `{e}`. Please check RCON settings and server status."
             )
