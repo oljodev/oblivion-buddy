@@ -64,6 +64,7 @@ class PlayersOnline(commands.Cog):
                         "announced_last72_milestones": [],
                         "announced_last7d_milestones": [],
                         "announced_last14d_milestones": [],
+                        "playtime_log": [],
                     },
                     f,
                 )
@@ -82,6 +83,7 @@ class PlayersOnline(commands.Cog):
         self.storage.setdefault("announced_last72_milestones", [])
         self.storage.setdefault("announced_last7d_milestones", [])
         self.storage.setdefault("announced_last14d_milestones", [])
+        self.storage.setdefault("playtime_log", [])
 
     def _save_storage(self):
         tmp = self.storage_path + ".tmp"
@@ -308,6 +310,7 @@ class PlayersOnline(commands.Cog):
         self.storage["players"] = {
             n: ts for n, ts in players.items() if float(ts) >= cutoff
         }
+
 
         # Get player counts for all categories
         last24, last72, last7d, last14d, all_time = self._categorize_players()
