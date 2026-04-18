@@ -132,6 +132,7 @@ class LevelingSystem(commands.Cog):
         self.cached_ranks = []
         self.last_cache_update = None
         self.cache_timeout = 60  # Oppdaterer cachen max hvert 60. sekund
+        self.lock = asyncio.Lock()
 
     # --- NY: Helper for å oppdatere rank-cachen effektivt ---
     async def update_leaderboard_cache(self):

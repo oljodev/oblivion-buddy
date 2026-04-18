@@ -52,7 +52,7 @@ class ServerGreetings(commands.Cog):
 
         background.text(
             (400, 325),
-            f"{member.name}#{member.discriminator}",
+            f"{member.name}",
             color="white",
             font=poppins_small,
             align="center",
@@ -118,7 +118,7 @@ class ServerGreetings(commands.Cog):
         # Draw the Username Text
         background.text(
             (400, 325),
-            f"{member.name}#{member.discriminator}",
+            f"{member.name}",
             color="white",
             font=poppins_small,
             align="center",

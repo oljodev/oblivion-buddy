@@ -337,6 +337,11 @@ class ConfirmationView(discord.ui.View):
         view.message = msg
         view.start_tasks()  # <--- Start nedtellingen her
 
+        # Store view so reroll can find it later
+        cog = interaction.client.get_cog("GiveawayCog")
+        if cog is not None:
+            cog.active_giveaways[str(msg.id)] = view
+
         # Persist data
         add_saved_giveaway(
             message_id=msg.id,
@@ -569,15 +574,14 @@ class GiveawayCog(commands.Cog):
                 f"Error fetching message: {e}", ephemeral=True
             )
 
-        # Check if it's a giveaway message with view
-        if not hasattr(message, "view") or not isinstance(
-            message.view, JoinGiveawayButton
-        ):
+        # Look up the view from active_giveaways
+        view = self.active_giveaways.get(str(msg_id))
+        if not isinstance(view, JoinGiveawayButton):
             return await interaction.response.send_message(
-                "This message is not a giveaway.", ephemeral=True
+                "This message is not a known giveaway. The bot may have restarted after it ended.",
+                ephemeral=True,
             )
 
-        view = message.view
         if not view.ended:
             return await interaction.response.send_message(
                 "This giveaway is still active. Cannot reroll.", ephemeral=True
