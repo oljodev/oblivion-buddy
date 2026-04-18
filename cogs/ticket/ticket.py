@@ -128,6 +128,16 @@ class TicketModal(discord.ui.Modal):
             embed=embed,
             view=TicketControls(),
         )
+
+        if self.reason_type == "Technical":
+            await thread.send(
+                "**AI Assistant available!**\n"
+                "While you wait for staff, you can try asking our AI for help:\n"
+                "1. Type `!ai` followed by your question\n"
+                "2. Attach your screenshot or crash log to the same message\n\n"
+                "**Example:** `!ai I get a crash when joining` *(+ attach screenshot)*"
+            )
+
         await interaction.followup.send(
             f"✅ Ticket created! Go here: {thread.mention}", ephemeral=True
         )
