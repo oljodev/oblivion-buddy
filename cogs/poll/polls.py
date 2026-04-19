@@ -172,7 +172,11 @@ class PollView(View):
         self.ended = False
         self.message = None
 
-        text_button = Button(label="📝 Send Answer", style=discord.ButtonStyle.primary)
+        text_button = Button(
+            label="📝 Send Answer",
+            style=discord.ButtonStyle.primary,
+            custom_id="poll:text_answer",
+        )
         text_button.callback = self.text_answer
         self.add_item(text_button)
 
@@ -413,10 +417,19 @@ class Polls(commands.Cog):
                 view.message = poll_message
 
                 self.poll_votes[poll_message.id] = entry.get("votes", 0)
-                thread_obj = guild.get_channel(entry.get("thread_id"))
+                thread_id = entry.get("thread_id")
+                thread_obj = guild.get_thread(thread_id) if thread_id else None
+                if not thread_obj and thread_id:
+                    try:
+                        thread_obj = await self.bot.fetch_channel(thread_id)
+                    except Exception as e:
+                        logger.error(
+                            f"⚠️ Failed to fetch poll thread {thread_id}: {e}"
+                        )
                 if thread_obj:
                     self.poll_threads[poll_message.id] = thread_obj
 
+                self.bot.add_view(view, message_id=poll_message.id)
                 await poll_message.edit(view=view)
                 logger.info(f"Restored poll view for message {msg_id}")
             except Exception as e:
@@ -426,7 +439,12 @@ class Polls(commands.Cog):
 async def setup(bot):
     cog = Polls(bot)
     await bot.add_cog(cog)
-    try:
-        await cog.restore_polls_from_state()
-    except Exception as e:
-        logger.error(f"⚠️ Failed to restore polls from state: {e}")
+
+    async def _restore_when_ready():
+        await bot.wait_until_ready()
+        try:
+            await cog.restore_polls_from_state()
+        except Exception as e:
+            logger.error(f"⚠️ Failed to restore polls from state: {e}")
+
+    asyncio.create_task(_restore_when_ready())
