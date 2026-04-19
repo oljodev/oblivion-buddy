@@ -181,19 +181,8 @@ class PlayersOnline(commands.Cog):
 
         return sort_nocase(last24), sort_nocase(last72), sort_nocase(last7d), sort_nocase(last14d), sort_nocase(all_time)
 
-    def _get_next_milestone(self, current_count):
-        """Get the next milestone if current_count has reached one (50, 75, 100, 125, ...)"""
-        for milestone in range(50, current_count + 1, 25):
-            if current_count >= milestone:
-                return milestone
-        return None
-
-    def _get_next_10_milestone(self, current_count):
-        """Get the next 10-player milestone if current_count has reached one (10, 20, 30, 40, 50, ...)"""
-        for milestone in range(10, current_count + 1, 10):
-            if current_count >= milestone:
-                return milestone
-        return None
+    def _reached_milestones(self, current_count, start, step):
+        return list(range(start, current_count + 1, step))
 
     def _build_embed(self):
         now = datetime.now(timezone.utc)
@@ -321,45 +310,20 @@ class PlayersOnline(commands.Cog):
         last7d_count = len(last7d)
         last14d_count = len(last14d)
 
-        # Check for all-time milestone achievements
-        announced_milestones = self.storage.setdefault("announced_milestones", [])
-        milestone = self._get_next_milestone(all_time_count)
-        if milestone and milestone not in announced_milestones:
-            await self._send_milestone_announcement(milestone, category="all_time")
-            announced_milestones.append(milestone)
-            self.storage["announced_milestones"] = announced_milestones
-
-        # Check for last 24 hours milestone achievements
-        announced_last24 = self.storage.setdefault("announced_last24_milestones", [])
-        milestone_24 = self._get_next_10_milestone(last24_count)
-        if milestone_24 and milestone_24 not in announced_last24:
-            await self._send_milestone_announcement(milestone_24, category="last24")
-            announced_last24.append(milestone_24)
-            self.storage["announced_last24_milestones"] = announced_last24
-
-        # Check for last 72 hours milestone achievements
-        announced_last72 = self.storage.setdefault("announced_last72_milestones", [])
-        milestone_72 = self._get_next_10_milestone(last72_count)
-        if milestone_72 and milestone_72 not in announced_last72:
-            await self._send_milestone_announcement(milestone_72, category="last72")
-            announced_last72.append(milestone_72)
-            self.storage["announced_last72_milestones"] = announced_last72
-
-        # Check for last 7 days milestone achievements
-        announced_last7d = self.storage.setdefault("announced_last7d_milestones", [])
-        milestone_7d = self._get_next_10_milestone(last7d_count)
-        if milestone_7d and milestone_7d not in announced_last7d:
-            await self._send_milestone_announcement(milestone_7d, category="last7d")
-            announced_last7d.append(milestone_7d)
-            self.storage["announced_last7d_milestones"] = announced_last7d
-
-        # Check for last 14 days milestone achievements
-        announced_last14d = self.storage.setdefault("announced_last14d_milestones", [])
-        milestone_14d = self._get_next_10_milestone(last14d_count)
-        if milestone_14d and milestone_14d not in announced_last14d:
-            await self._send_milestone_announcement(milestone_14d, category="last14d")
-            announced_last14d.append(milestone_14d)
-            self.storage["announced_last14d_milestones"] = announced_last14d
+        categories = [
+            ("announced_milestones", all_time_count, 50, 25, "all_time"),
+            ("announced_last24_milestones", last24_count, 10, 10, "last24"),
+            ("announced_last72_milestones", last72_count, 10, 10, "last72"),
+            ("announced_last7d_milestones", last7d_count, 10, 10, "last7d"),
+            ("announced_last14d_milestones", last14d_count, 10, 10, "last14d"),
+        ]
+        for key, count, start, step, category in categories:
+            announced = self.storage.setdefault(key, [])
+            for milestone in self._reached_milestones(count, start, step):
+                if milestone not in announced:
+                    await self._send_milestone_announcement(milestone, category=category)
+                    announced.append(milestone)
+            self.storage[key] = announced
 
         embed = self._build_embed()
         channel = self.bot.get_channel(STATS_CHANNEL_ID)
