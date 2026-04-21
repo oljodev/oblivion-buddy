@@ -5,6 +5,9 @@ import json
 import os
 import re
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from config import Channel, Role
 UPDATE_CHANNEL_ID = Channel.BOT_STAFF
@@ -14,6 +17,7 @@ MEMBER_ROLE_ID = Role.MEMBER
 MODPACK_ID = 1356927
 VERSION_FILE = "cogs/auto_curseforge_updates/last_version.json"
 CURSEFORGE_API_BASE = "https://api.curseforge.com/v1"
+CURSEFORGE_API_KEY = os.getenv("CURSEFORGE_API_KEY", "")
 
 
 class AutoCurseforgeUpdates(commands.Cog):
@@ -41,37 +45,36 @@ class AutoCurseforgeUpdates(commands.Cog):
             json.dump({"version": version}, f)
         self.last_version = version
 
-    async def fetch_modpack_info(self, api_key=None):
+    def _headers(self):
+        headers = {"Accept": "application/json"}
+        if CURSEFORGE_API_KEY:
+            headers["x-api-key"] = CURSEFORGE_API_KEY
+        return headers
+
+    async def fetch_modpack_info(self):
         """Fetch modpack information from CurseForge API."""
         try:
-            headers = {}
-            if api_key:
-                headers["x-api-key"] = api_key
-
             async with aiohttp.ClientSession() as session:
                 url = f"{CURSEFORGE_API_BASE}/mods/{MODPACK_ID}"
-                async with session.get(url, headers=headers) as response:
+                async with session.get(url, headers=self._headers()) as response:
                     if response.status == 200:
                         data = await response.json()
                         return data.get("data")
                     else:
-                        print(f"Error fetching modpack info: {response.status}")
+                        print(f"Error fetching modpack info: {response.status} {await response.text()}")
                         return None
         except Exception as e:
             print(f"Exception while fetching modpack info: {e}")
             return None
 
-    async def fetch_latest_version(self, api_key=None):
+    async def fetch_latest_version(self):
         """Fetch the latest version/file info from CurseForge."""
         try:
-            headers = {}
-            if api_key:
-                headers["x-api-key"] = api_key
-
             async with aiohttp.ClientSession() as session:
                 url = f"{CURSEFORGE_API_BASE}/mods/{MODPACK_ID}/files"
-                params = {"pageSize": 1, "sort": "dateCreated"}
-                async with session.get(url, headers=headers, params=params) as response:
+                # sortField=5 = DateCreated, sortOrder=desc = newest first
+                params = {"pageSize": 1, "sortField": 5, "sortOrder": "desc"}
+                async with session.get(url, headers=self._headers(), params=params) as response:
                     if response.status == 200:
                         data = await response.json()
                         files = data.get("data", [])
@@ -79,11 +82,27 @@ class AutoCurseforgeUpdates(commands.Cog):
                             return files[0]
                         return None
                     else:
-                        print(f"Error fetching latest version: {response.status}")
+                        print(f"Error fetching latest version: {response.status} {await response.text()}")
                         return None
         except Exception as e:
             print(f"Exception while fetching latest version: {e}")
             return None
+
+    async def fetch_changelog(self, file_id):
+        """Fetch changelog for a specific file from CurseForge."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"{CURSEFORGE_API_BASE}/mods/{MODPACK_ID}/files/{file_id}/changelog"
+                async with session.get(url, headers=self._headers()) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data.get("data", "")
+                    else:
+                        print(f"Error fetching changelog: {response.status}")
+                        return ""
+        except Exception as e:
+            print(f"Exception while fetching changelog: {e}")
+            return ""
 
     def convert_changelog_to_markdown(self, changelog_html):
         """Convert CurseForge changelog HTML/markup to Discord markdown."""
@@ -179,15 +198,8 @@ class AutoCurseforgeUpdates(commands.Cog):
             # Add footer
             embed.set_footer(text="CurseForge Auto Update")
 
-            # Send the embed
+            # Send the embed (no ping during testing)
             await channel.send(embed=embed)
-
-            # Send ping message
-            role = channel.guild.get_role(MEMBER_ROLE_ID)
-            if role:
-                await channel.send(f"{role.mention} New update available!")
-            else:
-                print(f"Role {MEMBER_ROLE_ID} not found!")
 
             return True
         except Exception as e:
@@ -227,8 +239,8 @@ class AutoCurseforgeUpdates(commands.Cog):
                 print("Could not fetch modpack info")
                 return
 
-            # Get changelog
-            changelog = file_info.get("changelog", "")
+            # Get changelog from dedicated endpoint
+            changelog = await self.fetch_changelog(current_version)
 
             # Send update
             success = await self.send_update_embed(modpack_info, file_info, changelog)
