@@ -7,6 +7,10 @@ import asyncio
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+MINIGAME_DISCORD_TOKEN = os.getenv("MINIGAME_DISCORD_TOKEN")
+
+# Cogs (sub-folder names) som skal kjøres på minigame-boten i stedet for hovedboten.
+MINIGAME_COG_FOLDERS = {"mini_games"}
 
 # --- Setup ---
 logging.basicConfig(
@@ -24,6 +28,7 @@ intents.members = True
 
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+minigame_bot = commands.Bot(command_prefix="!", intents=intents)
 
 GUILD_ID = discord.Object(id=1422932147550818507)
 
@@ -58,7 +63,20 @@ async def help_command_for_users(interaction: discord.Interaction):
     await interaction.response.send_message(help_text)
 
 
-async def load_cogs(bot: commands.Bot, logger: logging.Logger):
+async def load_cogs(
+    target_bot: commands.Bot,
+    logger: logging.Logger,
+    *,
+    folders: set[str] | None = None,
+    exclude_folders: set[str] | None = None,
+    include_top_level_files: bool = True,
+):
+    """Last cogs inn på en gitt bot.
+
+    folders: hvis satt, bare last cogs fra disse undermappene.
+    exclude_folders: hopp over disse undermappene.
+    include_top_level_files: om enkeltfiler direkte i ./cogs skal lastes.
+    """
     cogs_path = "./cogs"
 
     # Sørg for at cogs-mappen eksisterer
@@ -71,6 +89,11 @@ async def load_cogs(bot: commands.Bot, logger: logging.Logger):
 
         # --- 1. Sub-folders ---
         if os.path.isdir(full_path) and not filename.startswith("__"):
+            if folders is not None and filename not in folders:
+                continue
+            if exclude_folders is not None and filename in exclude_folders:
+                continue
+
             # Sjekk alle .py filer i mappen
             py_files = [
                 f
@@ -84,16 +107,18 @@ async def load_cogs(bot: commands.Bot, logger: logging.Logger):
             for py_file in py_files:
                 module_name = f"cogs.{filename}.{py_file[:-3]}"
                 try:
-                    await bot.load_extension(module_name)
+                    await target_bot.load_extension(module_name)
                     logger.info(f"✅ Loaded Cog (Sub-Module): {module_name}")
                 except Exception as e:
                     logger.error(f"❌ Can't load package {module_name}. Error: {e}")
 
         # --- 2. Single .py files in cogs folder ---
         elif filename.endswith(".py") and not filename.startswith("__"):
+            if not include_top_level_files:
+                continue
             module_name = f"cogs.{filename[:-3]}"
             try:
-                await bot.load_extension(module_name)
+                await target_bot.load_extension(module_name)
                 logger.info(f"✅ Loaded Cog (File): {module_name}")
             except Exception as e:
                 logger.error(f"❌ Can't load package {module_name}. Error: {e}")
@@ -127,9 +152,38 @@ async def on_ready():
     print("----------------------------------------------------")
 
 
-async def main():
-    await load_cogs(bot, logger)
+@minigame_bot.event
+async def on_ready():
+    await minigame_bot.wait_until_ready()
+    print(f"🎮 Minigame bot logged in as {minigame_bot.user} (ID: {minigame_bot.user.id})")
+    try:
+        synced = await minigame_bot.tree.sync(guild=GUILD_ID)
+        print(f"Synced {len(synced)} minigame commands to guild {GUILD_ID.id}.")
+    except Exception as e:
+        print(f"Error syncing minigame commands: {e}")
+    print("----------------------------------------------------")
+
+
+async def run_main_bot():
+    await load_cogs(bot, logger, exclude_folders=MINIGAME_COG_FOLDERS)
     await bot.start(DISCORD_TOKEN)
+
+
+async def run_minigame_bot():
+    if not MINIGAME_DISCORD_TOKEN:
+        logger.warning("MINIGAME_DISCORD_TOKEN not set — skipping minigame bot.")
+        return
+    await load_cogs(
+        minigame_bot,
+        logger,
+        folders=MINIGAME_COG_FOLDERS,
+        include_top_level_files=False,
+    )
+    await minigame_bot.start(MINIGAME_DISCORD_TOKEN)
+
+
+async def main():
+    await asyncio.gather(run_main_bot(), run_minigame_bot())
 
 
 # --- Kjør boten ---
