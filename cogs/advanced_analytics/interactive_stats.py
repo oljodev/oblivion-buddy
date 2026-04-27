@@ -32,6 +32,13 @@ class HistoryView(View):
 
     def get_embed(self):
         self.dates = get_sorted_dates()
+        if not self.dates:
+            return None
+        if self.index >= len(self.dates):
+            self.index = len(self.dates) - 1
+        if self.index < 0:
+            self.index = 0
+        self.update_buttons()
         date_str = self.dates[self.index]
         data = analytics_core.load_data()[date_str]
 
@@ -118,18 +125,27 @@ class HistoryView(View):
 
     @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.gray)
     async def prev(self, interaction: discord.Interaction, button: Button):
+        self.dates = get_sorted_dates()
+        if self.index >= len(self.dates):
+            self.index = len(self.dates) - 1
         if self.index > 0:
             self.index -= 1
-            self.update_buttons()
-            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        embed = self.get_embed()
+        if embed is None:
+            await interaction.response.defer()
+            return
+        await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.gray)
     async def next(self, interaction: discord.Interaction, button: Button):
         self.dates = get_sorted_dates()
         if self.index < len(self.dates) - 1:
             self.index += 1
-            self.update_buttons()
-            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        embed = self.get_embed()
+        if embed is None:
+            await interaction.response.defer()
+            return
+        await interaction.response.edit_message(embed=embed, view=self)
 
 
 class InteractiveStats(commands.Cog):
@@ -142,6 +158,7 @@ class InteractiveStats(commands.Cog):
         """Updates the embed every 15 minutes to show live data for today"""
         await self.bot.wait_until_ready()
 
+        analytics_core.ensure_today_exists()
         data = analytics_core.load_data()
         if "meta" not in data:
             data["meta"] = {}
