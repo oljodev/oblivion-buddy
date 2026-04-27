@@ -155,55 +155,26 @@ class AutoCurseforgeUpdates(commands.Cog):
         return text if text else "No changelog available."
 
     async def send_update_embed(self, modpack_info, file_info, changelog):
-        """Send the update embed to the configured channel."""
+        """Send the update message to the configured channel."""
         try:
             channel = self.bot.get_channel(UPDATE_CHANNEL_ID)
             if not channel:
                 print(f"Channel {UPDATE_CHANNEL_ID} not found!")
                 return False
 
-            # Create the embed
-            embed = discord.Embed(
-                title=f"📦 {modpack_info.get('name', 'Modpack')} - Update Available!",
-                description=f"Version: **{file_info.get('displayName', 'Unknown')}**",
-                color=discord.Color.blue(),
-                timestamp=datetime.utcnow(),
-            )
-
-            # Add changelog
+            version = file_info.get("displayName", "Unknown")
             changelog_text = self.convert_changelog_to_markdown(changelog)
-            # Limit to 4096 characters (Discord embed limit)
-            if len(changelog_text) > 4096:
-                changelog_text = changelog_text[:4093] + "..."
 
-            embed.add_field(
-                name="📝 Changelog",
-                value=changelog_text if changelog_text else "No changelog available.",
-                inline=False,
-            )
+            header = f"## 📦 {modpack_info.get('name', 'Modpack')} — Update Available!\nVersion: **{version}**\n\n"
+            budget = 2000 - len(header)
+            if len(changelog_text) > budget:
+                changelog_text = changelog_text[: budget - 3] + "..."
 
-            # Add file info
-            embed.add_field(
-                name="📅 Released",
-                value=file_info.get("fileDate", "Unknown"),
-                inline=True,
-            )
-
-            embed.add_field(
-                name="📥 Downloads",
-                value=str(file_info.get("downloadCount", 0)),
-                inline=True,
-            )
-
-            # Add footer
-            embed.set_footer(text="CurseForge Auto Update")
-
-            # Send the embed (no ping during testing)
-            await channel.send(embed=embed)
+            await channel.send(header + changelog_text)
 
             return True
         except Exception as e:
-            print(f"Exception while sending update embed: {e}")
+            print(f"Exception while sending update message: {e}")
             return False
 
     @tasks.loop(minutes=15)
