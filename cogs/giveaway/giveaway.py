@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 from datetime import datetime, timedelta
 import logging
@@ -13,6 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Giveaway")
 
 from config import GUILD_ID as _GUILD_ID, Channel, Role
+from cogs.giveaway import auto_entry
 
 GUILD_ID = discord.Object(id=_GUILD_ID)
 OWNER_ROLE_ID = Role.OWNER
@@ -62,6 +63,8 @@ def add_saved_giveaway(
     entries: list,
     required_role_id: int,
     image_url: str,
+    auto_mode: bool = False,
+    pending_user_ids: list | None = None,
 ):
     data = load_saved_giveaways()
     data[str(message_id)] = {
@@ -75,6 +78,8 @@ def add_saved_giveaway(
         "entries": entries,
         "required_role_id": required_role_id,
         "image_url": image_url,
+        "auto_mode": auto_mode,
+        "pending_user_ids": pending_user_ids or [],
     }
     save_all_giveaways(data)
 
@@ -84,6 +89,14 @@ def update_saved_entries(message_id: int, entries: list):
     key = str(message_id)
     if key in data:
         data[key]["entries"] = entries
+        save_all_giveaways(data)
+
+
+def update_saved_pending(message_id: int, pending_user_ids: list):
+    data = load_saved_giveaways()
+    key = str(message_id)
+    if key in data:
+        data[key]["pending_user_ids"] = pending_user_ids
         save_all_giveaways(data)
 
 
@@ -121,15 +134,18 @@ class JoinGiveawayButton(discord.ui.View):
         description: str,
         required_role_id: int = None,
         image_url: str = None,
+        auto_mode: bool = False,
     ):
         super().__init__(timeout=None)
         self.entries = []
+        self.pending_user_ids: list[int] = []
         self.end_time = end_time
         self.host = host
         self.prizes = prizes
         self.description = description
         self.required_role_id = required_role_id
         self.image_url = image_url
+        self.auto_mode = auto_mode
         self.ended = False
 
     def start_tasks(self):
@@ -251,7 +267,12 @@ class JoinGiveawayButton(discord.ui.View):
                 "This giveaway has already ended!", ephemeral=True
             )
 
-        # Role requirement check
+        if interaction.user.id in self.entries:
+            return await interaction.response.send_message(
+                "You are already participating!", ephemeral=True
+            )
+
+        # Role requirement check (applies in both modes)
         if self.required_role_id:
             role = interaction.guild.get_role(self.required_role_id)
             if role and role not in interaction.user.roles:
@@ -260,40 +281,225 @@ class JoinGiveawayButton(discord.ui.View):
                     ephemeral=True,
                 )
 
-        if interaction.user.id in self.entries:
-            return await interaction.response.send_message(
-                "You are already participating!", ephemeral=True
+        if self.auto_mode:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            await self._handle_auto_join(interaction)
+            return
+
+        # Standard mode — add immediately.
+        self._add_entry(interaction.user.id)
+        await self._refresh_message_embed(interaction)
+        await self._log_and_dm_host(interaction.user, interaction.guild)
+
+    async def _handle_auto_join(self, interaction: discord.Interaction):
+        user = interaction.user
+        result = await auto_entry.evaluate_user(user.id)
+
+        if result["qualifies"]:
+            self._add_entry(user.id)
+            if user.id in self.pending_user_ids:
+                self.pending_user_ids.remove(user.id)
+                update_saved_pending(self.message.id, self.pending_user_ids)
+            await self._refresh_message_embed(interaction, edit_original=False)
+            await interaction.followup.send(
+                embed=self._build_qualified_embed(result),
+                ephemeral=True,
             )
+            await self._send_auto_entry_dm(user, result)
+            await self._log_and_dm_host(user, interaction.guild)
+            return
 
-        self.entries.append(interaction.user.id)
-        update_saved_entries(self.message.id, self.entries)
+        # Not qualified yet — register intent.
+        if user.id not in self.pending_user_ids:
+            self.pending_user_ids.append(user.id)
+            update_saved_pending(self.message.id, self.pending_user_ids)
 
-        embed = interaction.message.embeds[0]
-        # Find the Entries field and update it
-        for idx, field in enumerate(embed.fields):
-            if field.name == "Entries":
-                embed.set_field_at(
-                    idx, name="Entries", value=str(len(self.entries)), inline=True
-                )
-                break
+        await interaction.followup.send(
+            embed=self._build_status_embed(user, result),
+            ephemeral=True,
+        )
 
-        await interaction.response.edit_message(embed=embed, view=self)
+    def _add_entry(self, user_id: int):
+        if user_id not in self.entries:
+            self.entries.append(user_id)
+            update_saved_entries(self.message.id, self.entries)
 
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    async def _refresh_message_embed(
+        self, interaction: discord.Interaction, edit_original: bool = True
+    ):
+        try:
+            msg = self.message
+            embed = msg.embeds[0] if msg.embeds else None
+            if embed is None:
+                return
+            for idx, field in enumerate(embed.fields):
+                if field.name == "Entries":
+                    embed.set_field_at(
+                        idx, name="Entries", value=str(len(self.entries)), inline=True
+                    )
+                    break
+            if edit_original and not interaction.response.is_done():
+                await interaction.response.edit_message(embed=embed, view=self)
+            else:
+                await msg.edit(embed=embed, view=self)
+        except Exception as e:
+            logger.warning(f"Could not refresh giveaway embed: {e}")
+
+    async def _log_and_dm_host(self, user: discord.abc.User, guild: discord.Guild):
+        log_channel = guild.get_channel(LOG_CHANNEL_ID) if guild else None
+        embed_log = discord.Embed(
+            title="New Giveaway Entry",
+            description=f"{user.mention} has entered the giveaway hosted by {self.host.mention}.",
+            color=discord.Color.green(),
+            timestamp=datetime.utcnow(),
+        )
         if log_channel:
-            embed_log = discord.Embed(
-                title="New Giveaway Entry",
-                description=f"{interaction.user.mention} has entered the giveaway hosted by {self.host.mention}.",
-                color=discord.Color.green(),
-                timestamp=datetime.utcnow(),
-            )
-            await log_channel.send(embed=embed_log)
-
-        # Send DM to host
+            try:
+                await log_channel.send(embed=embed_log)
+            except Exception:
+                pass
         try:
             await self.host.send(embed=embed_log)
         except discord.Forbidden:
-            pass  # Host has DMs closed
+            pass
+
+    def _build_status_embed(self, user, result: dict) -> discord.Embed:
+        linked = result["linked"]
+        secs = result["seconds_in_window"]
+        minutes = secs // 60
+        check = lambda b: "✅" if b else "❌"
+        playtime_str = (
+            f"{minutes} minutes" if result["current_ticks"] is not None
+            else "could not query (try again later)"
+        )
+        lines = [
+            f"{check(linked)} **1.** Link your Minecraft account with `/link`.",
+            f"{check(secs >= auto_entry.REQUIRED_SECONDS)} **2.** Play at least 1 hour on the SMP in the last 7 days. — Your playtime: **{playtime_str}**",
+        ]
+        if self.required_role_id:
+            role_ok = False
+            try:
+                if user.guild and user.guild.get_role(self.required_role_id) in getattr(user, "roles", []):
+                    role_ok = True
+            except Exception:
+                pass
+            lines.append(
+                f"{check(role_ok)} **3.** Have the <@&{self.required_role_id}> role."
+            )
+        lines.append(
+            "\nYou're on the waitlist. As soon as you meet the requirements, "
+            "the bot will automatically add you and DM you."
+        )
+        return discord.Embed(
+            title="Auto-entry — almost there!",
+            description="\n".join(lines),
+            color=discord.Color.orange(),
+        )
+
+    def _build_qualified_embed(self, result: dict) -> discord.Embed:
+        minutes = result["seconds_in_window"] // 60
+        return discord.Embed(
+            title="🎉 You're entered!",
+            description=(
+                f"You've been auto-entered into this giveaway because you meet "
+                f"the requirements (linked account, **{minutes} minutes** of "
+                f"playtime in the last 7 days)."
+            ),
+            color=discord.Color.green(),
+        )
+
+    async def _send_auto_entry_dm(self, user, result: dict):
+        try:
+            embed = discord.Embed(
+                title="✅ Auto-entered into a giveaway",
+                description=(
+                    f"You've been automatically entered into the giveaway hosted on "
+                    f"**{self.message.guild.name}** because you completed the "
+                    f"requirements (linked Minecraft account + "
+                    f"**{result['seconds_in_window'] // 60} minutes** of playtime "
+                    f"in the last 7 days).\n\n"
+                    f"If you don't want to participate, click **Leave giveaway** below."
+                ),
+                color=discord.Color.green(),
+            )
+            view = LeaveGiveawayView(self.message.id)
+            await user.send(embed=embed, view=view)
+        except discord.Forbidden:
+            logger.info(f"Cannot DM {user} (id={user.id}): DMs disabled.")
+        except Exception as e:
+            logger.error(f"Failed to DM auto-entry to {user.id}: {e}")
+
+
+class LeaveGiveawayView(discord.ui.View):
+    """Persistent view sent in the auto-entry DM with a single 'Leave' button.
+
+    Custom ID embeds the giveaway message_id so the cog can route the click
+    to the right giveaway after a bot restart.
+    """
+
+    def __init__(self, message_id: int):
+        super().__init__(timeout=None)
+        self.add_item(LeaveGiveawayButton(message_id))
+
+
+class LeaveGiveawayButton(discord.ui.Button):
+    def __init__(self, message_id: int):
+        super().__init__(
+            label="Leave giveaway",
+            style=discord.ButtonStyle.red,
+            custom_id=f"leave_giveaway:{message_id}",
+        )
+        self.message_id = message_id
+
+    async def callback(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("GiveawayCog")
+        if cog is None:
+            return await interaction.response.send_message(
+                "Bot is not ready, try again in a moment.", ephemeral=True
+            )
+        view = cog.active_giveaways.get(str(self.message_id))
+        user_id = interaction.user.id
+
+        if not isinstance(view, JoinGiveawayButton):
+            # Giveaway not active in memory — fall back to JSON.
+            data = load_saved_giveaways()
+            entry = data.get(str(self.message_id))
+            if not entry:
+                return await interaction.response.send_message(
+                    "This giveaway no longer exists.", ephemeral=True
+                )
+            if user_id in entry.get("entries", []):
+                entry["entries"] = [u for u in entry["entries"] if u != user_id]
+                save_all_giveaways(data)
+            self.disabled = True
+            return await interaction.response.edit_message(
+                content="You have been removed from the giveaway.", view=self.view
+            )
+
+        if view.ended:
+            return await interaction.response.send_message(
+                "This giveaway has already ended.", ephemeral=True
+            )
+        if user_id in view.entries:
+            view.entries.remove(user_id)
+            update_saved_entries(view.message.id, view.entries)
+            try:
+                msg = view.message
+                embed = msg.embeds[0] if msg.embeds else None
+                if embed:
+                    for idx, field in enumerate(embed.fields):
+                        if field.name == "Entries":
+                            embed.set_field_at(
+                                idx, name="Entries", value=str(len(view.entries)), inline=True
+                            )
+                            break
+                    await msg.edit(embed=embed, view=view)
+            except Exception as e:
+                logger.warning(f"Could not refresh embed after leave: {e}")
+        self.disabled = True
+        await interaction.response.edit_message(
+            content="You have been removed from the giveaway.", view=self.view
+        )
 
 
 class ConfirmationView(discord.ui.View):
@@ -305,6 +511,7 @@ class ConfirmationView(discord.ui.View):
         description: str,
         required_role_id: int,
         image_url: str,
+        auto_mode: bool = False,
     ):
         super().__init__(timeout=300)
         self.embed = embed
@@ -313,6 +520,7 @@ class ConfirmationView(discord.ui.View):
         self.description = description
         self.required_role_id = required_role_id
         self.image_url = image_url
+        self.auto_mode = auto_mode
 
     @discord.ui.button(label="Confirm & Start", style=discord.ButtonStyle.green)
     async def confirm_btn(
@@ -331,6 +539,7 @@ class ConfirmationView(discord.ui.View):
             description=self.description,
             required_role_id=self.required_role_id,
             image_url=self.image_url,
+            auto_mode=self.auto_mode,
         )
 
         # Post the actual giveaway to the channel
@@ -355,7 +564,15 @@ class ConfirmationView(discord.ui.View):
             entries=[],
             required_role_id=self.required_role_id,
             image_url=self.image_url,
+            auto_mode=self.auto_mode,
+            pending_user_ids=[],
         )
+
+        # Register persistent leave view so the DM button works after restart.
+        try:
+            interaction.client.add_view(LeaveGiveawayView(msg.id))
+        except Exception as e:
+            logger.warning(f"Could not register leave view for {msg.id}: {e}")
 
         role = interaction.guild.get_role(MEMBER_ROLE_ID)
         if role:
@@ -411,7 +628,7 @@ class GiveawayModal(discord.ui.Modal):
         )
         self.role_input = discord.ui.TextInput(
             label="Required Role (Optional)",
-            placeholder="Role Name or ID",
+            placeholder="Role Name/ID, 'auto', or 'auto + RoleName'",
             required=False,
             max_length=100,
         )
@@ -448,10 +665,10 @@ class GiveawayModal(discord.ui.Modal):
                 "You must provide at least one valid prize.", ephemeral=True
             )
 
-        # 3. Parse Role Requirement
+        # 3. Parse Role Requirement (and optional 'auto' keyword for auto-entry mode)
+        auto_mode, role_query = auto_entry.parse_role_field(self.role_input.value)
         required_role_id = None
-        if self.role_input.value.strip():
-            role_query = self.role_input.value.strip()
+        if role_query:
             if role_query.isdigit():
                 role = interaction.guild.get_role(int(role_query))
             else:
@@ -477,9 +694,19 @@ class GiveawayModal(discord.ui.Modal):
         end_ts = int(end_time.timestamp())
 
         # Construct Preview Embed
+        base_description = self.description_input.value or "No description provided."
+        if auto_mode:
+            base_description = (
+                f"{base_description}\n\n"
+                "**🤖 Auto-entry mode**\n"
+                "Click **🎉 Join** and follow the instructions:\n"
+                "1. Link your Minecraft account with `/link` (if you haven't already).\n"
+                "2. Play at least **1 hour** on the SMP in the last **7 days**.\n"
+                "3. Once you meet the requirements, you'll be added automatically and DM'd."
+            )
         embed = discord.Embed(
             title="🎉 Giveaway",
-            description=self.description_input.value or "No description provided.",
+            description=base_description,
             color=discord.Color.blurple(),
         )
 
@@ -501,19 +728,25 @@ class GiveawayModal(discord.ui.Modal):
         embed.add_field(name="Entries", value="0", inline=True)
         embed.add_field(name="Winners", value=str(len(prizes)), inline=True)
 
+        req_lines = []
+        if auto_mode:
+            req_lines.append("Auto-entry: linked MC account + 1h playtime in last 7 days")
         if required_role_id:
             role = interaction.guild.get_role(required_role_id)
+            req_lines.append(f"Must have {role.mention}")
+        if req_lines:
             embed.add_field(
-                name="Requirements", value=f"Must have {role.mention}", inline=False
+                name="Requirements", value="\n".join(req_lines), inline=False
             )
 
         view = ConfirmationView(
             embed=embed,
             end_time=end_time,
             prizes=prizes,
-            description=self.description_input.value,
+            description=base_description,
             required_role_id=required_role_id,
             image_url=image_url,
+            auto_mode=auto_mode,
         )
 
         await interaction.response.send_message(
@@ -529,6 +762,80 @@ class GiveawayCog(commands.Cog):
         self.active_giveaways = {}
         self.bot = bot
         self._restored = False
+        self.snapshot_loop.start()
+        self.recheck_pending_loop.start()
+
+    def cog_unload(self):
+        self.snapshot_loop.cancel()
+        self.recheck_pending_loop.cancel()
+
+    @tasks.loop(hours=1)
+    async def snapshot_loop(self):
+        try:
+            count = await auto_entry.snapshot_all_linked()
+            if count:
+                logger.info(f"Recorded playtime snapshots for {count} linked user(s).")
+        except Exception as e:
+            logger.error(f"Snapshot loop error: {e}")
+
+    @snapshot_loop.before_loop
+    async def _before_snapshot(self):
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(minutes=15)
+    async def recheck_pending_loop(self):
+        try:
+            for msg_id, view in list(self.active_giveaways.items()):
+                if not isinstance(view, JoinGiveawayButton):
+                    continue
+                if view.ended or not view.auto_mode or not view.pending_user_ids:
+                    continue
+                guild = view.message.guild if hasattr(view, "message") else None
+                if guild is None:
+                    continue
+                # Snapshot taken inside evaluate_user; iterate a copy.
+                for user_id in list(view.pending_user_ids):
+                    member = guild.get_member(user_id)
+                    if member is None:
+                        view.pending_user_ids.remove(user_id)
+                        update_saved_pending(view.message.id, view.pending_user_ids)
+                        continue
+                    # Re-check role requirement first (cheap, no RCON).
+                    if view.required_role_id:
+                        role = guild.get_role(view.required_role_id)
+                        if role and role not in member.roles:
+                            continue
+                    result = await auto_entry.evaluate_user(user_id)
+                    if not result["qualifies"]:
+                        continue
+                    view._add_entry(user_id)
+                    view.pending_user_ids.remove(user_id)
+                    update_saved_pending(view.message.id, view.pending_user_ids)
+                    try:
+                        msg = view.message
+                        embed = msg.embeds[0] if msg.embeds else None
+                        if embed:
+                            for idx, field in enumerate(embed.fields):
+                                if field.name == "Entries":
+                                    embed.set_field_at(
+                                        idx, name="Entries",
+                                        value=str(len(view.entries)), inline=True,
+                                    )
+                                    break
+                            await msg.edit(embed=embed, view=view)
+                    except Exception as e:
+                        logger.warning(f"Could not refresh embed during recheck: {e}")
+                    await view._send_auto_entry_dm(member, result)
+                    await view._log_and_dm_host(member, guild)
+                    logger.info(
+                        f"Auto-added pending user {user_id} to giveaway {view.message.id}."
+                    )
+        except Exception as e:
+            logger.error(f"Recheck pending loop error: {e}")
+
+    @recheck_pending_loop.before_loop
+    async def _before_recheck(self):
+        await self.bot.wait_until_ready()
 
     @app_commands.command(name="giveaway", description="Create a new giveaway.")
     @app_commands.guilds(GUILD_ID)
@@ -693,6 +1000,8 @@ class GiveawayCog(commands.Cog):
                 entries = info.get("entries", [])
                 required_role_id = info.get("required_role_id")
                 image_url = info.get("image_url")
+                auto_mode = info.get("auto_mode", False)
+                pending_user_ids = info.get("pending_user_ids", [])
 
                 try:
                     channel = self.bot.get_channel(
@@ -727,8 +1036,10 @@ class GiveawayCog(commands.Cog):
                     description=description,
                     required_role_id=required_role_id,
                     image_url=image_url,
+                    auto_mode=auto_mode,
                 )
                 view.entries = entries
+                view.pending_user_ids = list(pending_user_ids)
                 view.message = message  # Koble til meldingen FØRST
 
                 if end_time <= now:
@@ -749,6 +1060,13 @@ class GiveawayCog(commands.Cog):
 
                     view.start_tasks()
                     self.active_giveaways[str(message.id)] = view
+                    if auto_mode:
+                        try:
+                            self.bot.add_view(LeaveGiveawayView(message.id))
+                        except Exception as e:
+                            logger.warning(
+                                f"Could not register leave view for restored giveaway {message.id}: {e}"
+                            )
                     logger.info(f"Restored giveaway {message.id}")
             except Exception as e:
                 logger.error(f"Error while restoring giveaway {key}: {e}")
