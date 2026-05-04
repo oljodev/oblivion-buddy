@@ -17,22 +17,20 @@ from config import Channel
 LOG_CHANNEL_ID = Channel.LOG
 STATS_CHANNEL_ID = Channel.SIMPLE_STATS
 
-# Words that might appear in RCON response that are NOT names
+# Strict Minecraft username regex: 3-16 chars, alphanumeric + underscore.
+# (MC technically allows 1-16 but enforcing >=3 keeps short English words out.)
+MC_NAME_RE = re.compile(r"^[A-Za-z0-9_]{3,16}$")
+
+# Defense in depth: common English words and RCON command keywords that
+# could appear in unexpected RCON output (e.g. scoreboard error messages
+# leaking into list output).
 BLACKLIST_NAMES = {
-    "there",
-    "are",
-    "of",
-    "a",
-    "max",
-    "players",
-    "online",
-    "server",
-    "info",
-    "list",
-    "connected",
-    "max",
-    "joined",
-    "left",
+    "there", "are", "of", "max", "players", "online", "server", "info",
+    "list", "connected", "joined", "left", "for", "get", "set", "value",
+    "playtime", "none", "null", "the", "and", "from", "with", "have",
+    "has", "was", "not", "out", "all", "any", "can", "cant", "true",
+    "false", "error", "warn", "warning", "debug", "trigger", "scoreboard",
+    "objective", "objectives", "score", "found", "unknown", "missing",
 }
 
 
@@ -108,42 +106,32 @@ class PlayersOnline(commands.Cog):
         """
         Parses the Minecraft 'list' command.
         Target format: "There are 2/20 players online: Alice, Bob"
+
+        If the response doesn't match the expected "...online: ..." shape we
+        return [] rather than guessing — better to miss one tick than to
+        permanently poison the player set with words from an error message.
         """
         if not resp:
             return []
 
-        # 1. Attempt to find the list part after the colon
-        # Matches: "... players online: name1, name2"
         match = re.search(r"online:?\s*(.*)", resp, re.IGNORECASE)
+        if not match:
+            return []
+        raw_names_str = match.group(1)
 
-        raw_names_str = ""
-        if match:
-            raw_names_str = match.group(1)
-        else:
-            # Fallback: if no colon usage found, assume specific Bungee/Velocity output
-            # or try to process the whole string if it's just a raw list
-            raw_names_str = resp
-
-        # 2. Split by comma or whitespace
         tokens = re.split(r"[,\s]+", raw_names_str)
 
         valid_names = []
         for t in tokens:
-            # Strip non-alphanumeric chars (punctuation)
             clean_name = re.sub(r"^[^A-Za-z0-9_]+|[^A-Za-z0-9_]+$", "", t)
+            if not MC_NAME_RE.match(clean_name):
+                continue
+            if clean_name.lower() in BLACKLIST_NAMES:
+                continue
+            if clean_name.isdigit():
+                continue
+            valid_names.append(clean_name)
 
-            # Validation:
-            # 1. Length 2-16 (standard MC, some servers allow longer, adjusting to 20)
-            # 2. Must not be just numbers (avoids IDs/timestamps)
-            # 3. Must not be in blacklist words
-            if (
-                2 <= len(clean_name) <= 20
-                and not clean_name.isdigit()
-                and clean_name.lower() not in BLACKLIST_NAMES
-            ):
-                valid_names.append(clean_name)
-
-        # Remove duplicates while preserving order
         seen = set()
         uniq = []
         for n in valid_names:
