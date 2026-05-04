@@ -51,6 +51,9 @@ def _build_dm_embed() -> discord.Embed:
             "people behind it and we'd love for you to stick around.\n\n"
             f"If you want to play on the SMP, check out <#{int(Channel.HOW_TO_JOIN)}> "
             "for instructions.\n\n"
+            "When you're ready, please run **`/link`** in the server to connect "
+            "your Minecraft account — it unlocks playtime tracking, giveaway "
+            "auto-entry, and other goodies.\n\n"
             "Hope to see you in the server soon!"
         ),
         color=discord.Color.blurple(),
@@ -115,16 +118,6 @@ class WelcomeDM(commands.Cog):
         logger.info(
             f"Scheduled welcome DM for {member} (id={member.id}) at {scheduled_for.isoformat()}"
         )
-
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        if message.author.bot or message.guild is None:
-            return
-        if message.author.id in self._tasks or str(message.author.id) in _load_pending():
-            self._cancel_and_forget(message.author.id)
-            logger.info(
-                f"Cancelled welcome DM for {message.author} (id={message.author.id}): user spoke."
-            )
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
