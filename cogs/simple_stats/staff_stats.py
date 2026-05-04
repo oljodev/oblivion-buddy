@@ -8,6 +8,7 @@ import os
 logger = logging.getLogger("ServerTracker")
 
 from config import Channel
+
 STAFF_STATS_CHANNEL_ID = Channel.SIMPLE_STATS
 LOG_CHANNEL_ID = Channel.LOG
 
@@ -233,7 +234,7 @@ class ServerTracker(commands.Cog):
             value=f"{self.voice_events:,}",
             inline=True,
         )
-        embed.add_field(name="👥 Members", value=f"{total_members - 1:,}", inline=True)
+        embed.add_field(name="👥 Members", value=f"{total_members - 3:,}", inline=True)
         embed.set_footer(text="Auto-updated every 60 seconds")
 
         try:
