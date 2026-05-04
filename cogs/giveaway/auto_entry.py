@@ -142,17 +142,19 @@ def _safe_parse_ts(s) -> datetime | None:
         return None
 
 
-def seconds_in_window(discord_id: int, current_ticks: int) -> int:
-    """Seconds played in the last WINDOW_DAYS for a user.
+def seconds_in_window(
+    discord_id: int, current_ticks: int, window_days: int = WINDOW_DAYS
+) -> int:
+    """Seconds played in the last `window_days` for a user.
 
     Cold-start rule: if our oldest snapshot is younger than the window, we
     cannot honestly measure "last N days" — playtime older than that snapshot
     is invisible to us. In that case we credit the full current cumulative
-    playtime. Once we have a snapshot >= WINDOW_DAYS old, strict measurement
+    playtime. Once we have a snapshot >= window_days old, strict measurement
     (current - oldest_in_window) takes over.
     """
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=WINDOW_DAYS)
+    cutoff = now - timedelta(days=window_days)
     entries = _load_snapshots().get(str(discord_id), [])
     parsed = []
     for e in entries:
@@ -172,7 +174,11 @@ def seconds_in_window(discord_id: int, current_ticks: int) -> int:
     return diff_ticks // TICKS_PER_SEC
 
 
-async def evaluate_user(discord_id: int) -> dict:
+async def evaluate_user(
+    discord_id: int,
+    required_seconds: int = REQUIRED_SECONDS,
+    window_days: int = WINDOW_DAYS,
+) -> dict:
     """Live evaluation of a user's auto-entry qualification.
 
     Returns: {
@@ -197,11 +203,11 @@ async def evaluate_user(discord_id: int) -> dict:
         }
     # Compute first against existing snapshots, then record. Otherwise the
     # snapshot we just took becomes its own baseline and the diff is zero.
-    secs = seconds_in_window(discord_id, current_ticks)
+    secs = seconds_in_window(discord_id, current_ticks, window_days=window_days)
     record_snapshot(discord_id, current_ticks)
     return {
         "linked": True, "mc_name": mc_name, "current_ticks": current_ticks,
-        "seconds_in_window": secs, "qualifies": secs >= REQUIRED_SECONDS,
+        "seconds_in_window": secs, "qualifies": secs >= required_seconds,
     }
 
 

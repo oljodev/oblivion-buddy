@@ -65,6 +65,10 @@ def add_saved_giveaway(
     image_url: str,
     auto_mode: bool = False,
     pending_user_ids: list | None = None,
+    auto_required_seconds: int = auto_entry.REQUIRED_SECONDS,
+    auto_window_days: int = auto_entry.WINDOW_DAYS,
+    auto_send_dm: bool = True,
+    auto_show_leave_button: bool = True,
 ):
     data = load_saved_giveaways()
     data[str(message_id)] = {
@@ -80,6 +84,10 @@ def add_saved_giveaway(
         "image_url": image_url,
         "auto_mode": auto_mode,
         "pending_user_ids": pending_user_ids or [],
+        "auto_required_seconds": auto_required_seconds,
+        "auto_window_days": auto_window_days,
+        "auto_send_dm": auto_send_dm,
+        "auto_show_leave_button": auto_show_leave_button,
     }
     save_all_giveaways(data)
 
@@ -125,6 +133,40 @@ def parse_duration(duration_str: str) -> int:
     return total_seconds
 
 
+def parse_days(value: str) -> int:
+    """Parse '7', '7d', '14d' into days. Returns 0 on failure."""
+    s = (value or "").strip().lower().rstrip("d").strip()
+    if not s.isdigit():
+        return 0
+    return int(s)
+
+
+def parse_yes_no(value: str, default: bool = True) -> bool:
+    s = (value or "").strip().lower()
+    if s in {"yes", "y", "true", "1", "on"}:
+        return True
+    if s in {"no", "n", "false", "0", "off"}:
+        return False
+    return default
+
+
+def format_duration_short(seconds: int) -> str:
+    """Render seconds as '1h', '90m', '2h 30m', '1d 4h' for human display."""
+    if seconds <= 0:
+        return "0m"
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes and not days:
+        parts.append(f"{minutes}m")
+    return " ".join(parts) or "0m"
+
+
 class JoinGiveawayButton(discord.ui.View):
     def __init__(
         self,
@@ -135,6 +177,10 @@ class JoinGiveawayButton(discord.ui.View):
         required_role_id: int = None,
         image_url: str = None,
         auto_mode: bool = False,
+        auto_required_seconds: int = auto_entry.REQUIRED_SECONDS,
+        auto_window_days: int = auto_entry.WINDOW_DAYS,
+        auto_send_dm: bool = True,
+        auto_show_leave_button: bool = True,
     ):
         super().__init__(timeout=None)
         self.entries = []
@@ -146,6 +192,10 @@ class JoinGiveawayButton(discord.ui.View):
         self.required_role_id = required_role_id
         self.image_url = image_url
         self.auto_mode = auto_mode
+        self.auto_required_seconds = auto_required_seconds
+        self.auto_window_days = auto_window_days
+        self.auto_send_dm = auto_send_dm
+        self.auto_show_leave_button = auto_show_leave_button
         self.ended = False
 
     def start_tasks(self):
@@ -293,7 +343,11 @@ class JoinGiveawayButton(discord.ui.View):
 
     async def _handle_auto_join(self, interaction: discord.Interaction):
         user = interaction.user
-        result = await auto_entry.evaluate_user(user.id)
+        result = await auto_entry.evaluate_user(
+            user.id,
+            required_seconds=self.auto_required_seconds,
+            window_days=self.auto_window_days,
+        )
 
         if result["qualifies"]:
             self._add_entry(user.id)
@@ -372,9 +426,11 @@ class JoinGiveawayButton(discord.ui.View):
             f"{minutes} minutes" if result["current_ticks"] is not None
             else "could not query (try again later)"
         )
+        req_str = format_duration_short(self.auto_required_seconds)
+        win_str = f"{self.auto_window_days} days"
         lines = [
             f"{check(linked)} **1.** Link your Minecraft account with `/link`.",
-            f"{check(secs >= auto_entry.REQUIRED_SECONDS)} **2.** Play at least 1 hour on the SMP in the last 7 days. — Your playtime: **{playtime_str}**",
+            f"{check(secs >= self.auto_required_seconds)} **2.** Play at least {req_str} on the SMP in the last {win_str}. — Your playtime: **{playtime_str}**",
         ]
         if self.required_role_id:
             role_ok = False
@@ -403,27 +459,34 @@ class JoinGiveawayButton(discord.ui.View):
             description=(
                 f"You've been auto-entered into this giveaway because you meet "
                 f"the requirements (linked account, **{minutes} minutes** of "
-                f"playtime in the last 7 days)."
+                f"playtime in the last {self.auto_window_days} days)."
             ),
             color=discord.Color.green(),
         )
 
     async def _send_auto_entry_dm(self, user, result: dict):
+        if not self.auto_send_dm:
+            return
         try:
+            description = (
+                f"You've been automatically entered into the giveaway hosted on "
+                f"**{self.message.guild.name}** because you completed the "
+                f"requirements (linked Minecraft account + "
+                f"**{result['seconds_in_window'] // 60} minutes** of playtime "
+                f"in the last {self.auto_window_days} days)."
+            )
+            if self.auto_show_leave_button:
+                description += "\n\nIf you don't want to participate, click **Leave giveaway** below."
             embed = discord.Embed(
                 title="✅ Auto-entered into a giveaway",
-                description=(
-                    f"You've been automatically entered into the giveaway hosted on "
-                    f"**{self.message.guild.name}** because you completed the "
-                    f"requirements (linked Minecraft account + "
-                    f"**{result['seconds_in_window'] // 60} minutes** of playtime "
-                    f"in the last 7 days).\n\n"
-                    f"If you don't want to participate, click **Leave giveaway** below."
-                ),
+                description=description,
                 color=discord.Color.green(),
             )
-            view = LeaveGiveawayView(self.message.id)
-            await user.send(embed=embed, view=view)
+            if self.auto_show_leave_button:
+                view = LeaveGiveawayView(self.message.id)
+                await user.send(embed=embed, view=view)
+            else:
+                await user.send(embed=embed)
         except discord.Forbidden:
             logger.info(f"Cannot DM {user} (id={user.id}): DMs disabled.")
         except Exception as e:
@@ -502,6 +565,95 @@ class LeaveGiveawayButton(discord.ui.Button):
         )
 
 
+class ChangeAutoSettingsButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Change auto settings",
+            style=discord.ButtonStyle.secondary,
+            row=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(AutoSettingsModal(self.view))
+
+
+class AutoSettingsModal(discord.ui.Modal):
+    def __init__(self, conf_view: "ConfirmationView"):
+        super().__init__(title="Auto-entry settings")
+        self.conf_view = conf_view
+
+        self.playtime_input = discord.ui.TextInput(
+            label="Required playtime",
+            placeholder="e.g. 1h, 30m, 2h",
+            required=True,
+            max_length=20,
+            default=format_duration_short(conf_view.auto_required_seconds),
+        )
+        self.window_input = discord.ui.TextInput(
+            label="Time window (days)",
+            placeholder="e.g. 7, 14, 30",
+            required=True,
+            max_length=10,
+            default=f"{conf_view.auto_window_days}d",
+        )
+        self.send_dm_input = discord.ui.TextInput(
+            label="Send DM on auto-entry?",
+            placeholder="yes / no",
+            required=True,
+            max_length=10,
+            default="yes" if conf_view.auto_send_dm else "no",
+        )
+        self.leave_button_input = discord.ui.TextInput(
+            label="Show 'Leave giveaway' button in DM?",
+            placeholder="yes / no",
+            required=True,
+            max_length=10,
+            default="yes" if conf_view.auto_show_leave_button else "no",
+        )
+        for f in (
+            self.playtime_input,
+            self.window_input,
+            self.send_dm_input,
+            self.leave_button_input,
+        ):
+            self.add_item(f)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        seconds = parse_duration(self.playtime_input.value)
+        if seconds <= 0:
+            return await interaction.response.send_message(
+                "Invalid playtime — use formats like `1h`, `30m`, `2h 30m`.",
+                ephemeral=True,
+            )
+        days = parse_days(self.window_input.value)
+        if days <= 0:
+            return await interaction.response.send_message(
+                "Invalid time window — use a positive number of days like `7` or `14d`.",
+                ephemeral=True,
+            )
+
+        self.conf_view.auto_required_seconds = seconds
+        self.conf_view.auto_window_days = days
+        self.conf_view.auto_send_dm = parse_yes_no(
+            self.send_dm_input.value, default=True
+        )
+        self.conf_view.auto_show_leave_button = parse_yes_no(
+            self.leave_button_input.value, default=True
+        )
+
+        # Rebuild the preview embed to reflect the new settings.
+        new_embed = self.conf_view.build_embed()
+        self.conf_view.embed = new_embed
+        await interaction.response.edit_message(
+            content=(
+                "**👀 Preview your giveaway:**\n"
+                "Auto settings updated. Press **Confirm & Start** when ready."
+            ),
+            embed=new_embed,
+            view=self.conf_view,
+        )
+
+
 class ConfirmationView(discord.ui.View):
     def __init__(
         self,
@@ -512,15 +664,78 @@ class ConfirmationView(discord.ui.View):
         required_role_id: int,
         image_url: str,
         auto_mode: bool = False,
+        host_mention: str = "",
+        auto_required_seconds: int = auto_entry.REQUIRED_SECONDS,
+        auto_window_days: int = auto_entry.WINDOW_DAYS,
+        auto_send_dm: bool = True,
+        auto_show_leave_button: bool = True,
     ):
         super().__init__(timeout=300)
         self.embed = embed
         self.end_time = end_time
         self.prizes = prizes
-        self.description = description
+        self.description = description  # plain (no auto-mode block appended)
         self.required_role_id = required_role_id
         self.image_url = image_url
         self.auto_mode = auto_mode
+        self.host_mention = host_mention
+        self.auto_required_seconds = auto_required_seconds
+        self.auto_window_days = auto_window_days
+        self.auto_send_dm = auto_send_dm
+        self.auto_show_leave_button = auto_show_leave_button
+        if self.auto_mode:
+            self.add_item(ChangeAutoSettingsButton())
+
+    def build_embed(self) -> discord.Embed:
+        """Reconstruct the preview embed using current settings."""
+        end_ts = int(self.end_time.timestamp())
+        req_str = format_duration_short(self.auto_required_seconds)
+        win_str = f"{self.auto_window_days} days"
+
+        base_description = self.description or "No description provided."
+        if self.auto_mode:
+            base_description = (
+                f"{base_description}\n\n"
+                "**🤖 Auto-entry mode**\n"
+                "Click **🎉 Join** and follow the instructions:\n"
+                "1. Link your Minecraft account with `/link` (if you haven't already).\n"
+                f"2. Play at least **{req_str}** on the SMP in the last **{win_str}**.\n"
+                "3. Once you meet the requirements, you'll be added automatically"
+                + (" and DM'd." if self.auto_send_dm else ".")
+            )
+
+        embed = discord.Embed(
+            title="🎉 Giveaway",
+            description=base_description,
+            color=discord.Color.blurple(),
+        )
+        if self.image_url:
+            embed.set_thumbnail(url=self.image_url)
+
+        emojis = ["🥇", "🥈", "🥉", "🏅"]
+        prize_lines = []
+        for idx, p in enumerate(self.prizes):
+            emoji = emojis[idx] if idx < 3 else emojis[-1]
+            prize_lines.append(f"{emoji} **{idx + 1}. Place:** {p}")
+        embed.add_field(name="Prizes", value="\n".join(prize_lines), inline=False)
+        embed.add_field(
+            name="Ends", value=f"<t:{end_ts}:R> (<t:{end_ts}:f>)", inline=False
+        )
+        embed.add_field(name="Hosted by", value=self.host_mention, inline=True)
+        embed.add_field(name="Entries", value="0", inline=True)
+        embed.add_field(name="Winners", value=str(len(self.prizes)), inline=True)
+
+        req_lines = []
+        if self.auto_mode:
+            req_lines.append(
+                f"Auto-entry: linked MC account + {req_str} playtime in last {win_str}"
+            )
+        if self.required_role_id:
+            req_lines.append(f"Must have <@&{self.required_role_id}>")
+        if req_lines:
+            embed.add_field(name="Requirements", value="\n".join(req_lines), inline=False)
+
+        return embed
 
     @discord.ui.button(label="Confirm & Start", style=discord.ButtonStyle.green)
     async def confirm_btn(
@@ -540,6 +755,10 @@ class ConfirmationView(discord.ui.View):
             required_role_id=self.required_role_id,
             image_url=self.image_url,
             auto_mode=self.auto_mode,
+            auto_required_seconds=self.auto_required_seconds,
+            auto_window_days=self.auto_window_days,
+            auto_send_dm=self.auto_send_dm,
+            auto_show_leave_button=self.auto_show_leave_button,
         )
 
         # Post the actual giveaway to the channel
@@ -566,6 +785,10 @@ class ConfirmationView(discord.ui.View):
             image_url=self.image_url,
             auto_mode=self.auto_mode,
             pending_user_ids=[],
+            auto_required_seconds=self.auto_required_seconds,
+            auto_window_days=self.auto_window_days,
+            auto_send_dm=self.auto_send_dm,
+            auto_show_leave_button=self.auto_show_leave_button,
         )
 
         # Register persistent leave view so the DM button works after restart.
@@ -691,63 +914,21 @@ class GiveawayModal(discord.ui.Modal):
             )
 
         end_time = datetime.utcnow() + timedelta(seconds=seconds)
-        end_ts = int(end_time.timestamp())
 
-        # Construct Preview Embed
-        base_description = self.description_input.value or "No description provided."
-        if auto_mode:
-            base_description = (
-                f"{base_description}\n\n"
-                "**🤖 Auto-entry mode**\n"
-                "Click **🎉 Join** and follow the instructions:\n"
-                "1. Link your Minecraft account with `/link` (if you haven't already).\n"
-                "2. Play at least **1 hour** on the SMP in the last **7 days**.\n"
-                "3. Once you meet the requirements, you'll be added automatically and DM'd."
-            )
-        embed = discord.Embed(
-            title="🎉 Giveaway",
-            description=base_description,
-            color=discord.Color.blurple(),
-        )
-
-        if image_url:
-            embed.set_thumbnail(url=image_url)
-
-        # Format Prize list
-        emojis = ["🥇", "🥈", "🥉", "🏅"]
-        prize_lines = []
-        for idx, p in enumerate(prizes):
-            emoji = emojis[idx] if idx < 3 else emojis[-1]
-            prize_lines.append(f"{emoji} **{idx + 1}. Place:** {p}")
-
-        embed.add_field(name="Prizes", value="\n".join(prize_lines), inline=False)
-        embed.add_field(
-            name="Ends", value=f"<t:{end_ts}:R> (<t:{end_ts}:f>)", inline=False
-        )
-        embed.add_field(name="Hosted by", value=interaction.user.mention, inline=True)
-        embed.add_field(name="Entries", value="0", inline=True)
-        embed.add_field(name="Winners", value=str(len(prizes)), inline=True)
-
-        req_lines = []
-        if auto_mode:
-            req_lines.append("Auto-entry: linked MC account + 1h playtime in last 7 days")
-        if required_role_id:
-            role = interaction.guild.get_role(required_role_id)
-            req_lines.append(f"Must have {role.mention}")
-        if req_lines:
-            embed.add_field(
-                name="Requirements", value="\n".join(req_lines), inline=False
-            )
+        raw_description = self.description_input.value or "No description provided."
 
         view = ConfirmationView(
-            embed=embed,
+            embed=None,  # built below
             end_time=end_time,
             prizes=prizes,
-            description=base_description,
+            description=raw_description,
             required_role_id=required_role_id,
             image_url=image_url,
             auto_mode=auto_mode,
+            host_mention=interaction.user.mention,
         )
+        embed = view.build_embed()
+        view.embed = embed
 
         await interaction.response.send_message(
             content="**👀 Preview your giveaway:**\nPlease review the details below. If everything looks correct, press **Confirm & Start**.",
@@ -805,7 +986,11 @@ class GiveawayCog(commands.Cog):
                         role = guild.get_role(view.required_role_id)
                         if role and role not in member.roles:
                             continue
-                    result = await auto_entry.evaluate_user(user_id)
+                    result = await auto_entry.evaluate_user(
+                        user_id,
+                        required_seconds=view.auto_required_seconds,
+                        window_days=view.auto_window_days,
+                    )
                     if not result["qualifies"]:
                         continue
                     view._add_entry(user_id)
@@ -1002,6 +1187,14 @@ class GiveawayCog(commands.Cog):
                 image_url = info.get("image_url")
                 auto_mode = info.get("auto_mode", False)
                 pending_user_ids = info.get("pending_user_ids", [])
+                auto_required_seconds = info.get(
+                    "auto_required_seconds", auto_entry.REQUIRED_SECONDS
+                )
+                auto_window_days = info.get(
+                    "auto_window_days", auto_entry.WINDOW_DAYS
+                )
+                auto_send_dm = info.get("auto_send_dm", True)
+                auto_show_leave_button = info.get("auto_show_leave_button", True)
 
                 try:
                     channel = self.bot.get_channel(
@@ -1037,6 +1230,10 @@ class GiveawayCog(commands.Cog):
                     required_role_id=required_role_id,
                     image_url=image_url,
                     auto_mode=auto_mode,
+                    auto_required_seconds=auto_required_seconds,
+                    auto_window_days=auto_window_days,
+                    auto_send_dm=auto_send_dm,
+                    auto_show_leave_button=auto_show_leave_button,
                 )
                 view.entries = entries
                 view.pending_user_ids = list(pending_user_ids)
