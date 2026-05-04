@@ -154,11 +154,13 @@ class LevelingSystem(commands.Cog):
                         with open(os.path.join(DATA_FOLDER, filename), "r") as f:
                             data = json.load(f)
                             msgs = data.get("messages_sent", 0)
-                            if msgs > 0:
+                            invite_xp = data.get("invite_xp", 0)
+                            total_xp = msgs * XP_PER_MESSAGE + invite_xp
+                            if total_xp > 0:
                                 temp_users.append(
                                     {
                                         "user_id": data.get("user_id"),
-                                        "xp": msgs * XP_PER_MESSAGE,
+                                        "xp": total_xp,
                                     }
                                 )
                     except Exception:
@@ -187,17 +189,17 @@ class LevelingSystem(commands.Cog):
         except Exception as e:
             logger.error(f"Failed to save tracking data: {e}")
 
-    def get_user_messages(self, user_id: int) -> int:
-        """Reads the existing simple_stats json file without modifying it."""
+    def get_user_stats(self, user_id: int) -> tuple[int, int]:
+        """Reads the existing json file to return (messages_sent, invite_xp)."""
         path = os.path.join(DATA_FOLDER, f"{user_id}.json")
         if os.path.exists(path):
             try:
                 with open(path, "r") as f:
                     data = json.load(f)
-                    return data.get("messages_sent", 0)
+                    return data.get("messages_sent", 0), data.get("invite_xp", 0)
             except Exception:
                 pass
-        return 0
+        return 0, 0
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -212,73 +214,44 @@ class LevelingSystem(commands.Cog):
             if not is_admin:
                 return
 
-        user_id_str = str(message.author.id)
-
-        # 1. Beregn nivå basert på nåværende meldinger
-        messages_sent = self.get_user_messages(message.author.id)
-        current_xp = messages_sent * XP_PER_MESSAGE
-        target_level = get_level_from_xp(current_xp)
-
-        # 2. Hent sist annonserte nivå
-        # Vi henter det på nytt her for å være helt sikre på at vi har siste status
-        last_announced = self.level_tracking.get(user_id_str, 0)
-
-        # 3. Hvis brukeren skal opp i nivå
-        if target_level > last_announced:
-            announcement_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
-
-            for lvl in range(last_announced + 1, target_level + 1):
-                # Oppdaterer minnet med en gang så ingen andre prosesser tror de må sende samme level
-                self.level_tracking[user_id_str] = lvl
-                self.save_tracking_data()
-
-                if announcement_channel:
-                    try:
-                        await announcement_channel.send(
-                            f"🎉 Congrats {message.author.mention}! Your level is now **{lvl}**!"
-                        )
-                        # --- FIX 1: Pause ---
-                        # Vi legger inn 1 sekund pause så Discord får meldingene i rekkefølge
-                        import asyncio
-
-                        await asyncio.sleep(1.2)
-                    except Exception as e:
-                        logger.error(f"Kunne ikke sende melding: {e}")
-
-                # Gi roller
-                if lvl in ROLE_MILESTONES:
-                    role_name = f"Level {lvl}"
-                    role = discord.utils.get(message.guild.roles, name=role_name)
-                    if role and role not in message.author.roles:
-                        try:
-                            await message.author.add_roles(role)
-                        except:  # noqa: E722
-                            pass
-
-        # Bruk låsen her!
         async with self.lock:
             user_id_str = str(message.author.id)
-            messages_sent = self.get_user_messages(message.author.id)
-            current_xp = messages_sent * XP_PER_MESSAGE
+
+            # 1. Beregn nivå basert på meldinger + invite_xp
+            messages_sent, invite_xp = self.get_user_stats(message.author.id)
+            current_xp = (messages_sent * XP_PER_MESSAGE) + invite_xp
             target_level = get_level_from_xp(current_xp)
 
-            # Viktig: Last inn data på NYTT her inne for å få med siste endringer fra andre meldinger
+            # 2. Last inn data på NYTT for å få med siste endringer fra andre meldinger
             self.level_tracking = self.load_tracking_data()
             last_announced = self.level_tracking.get(user_id_str, 0)
 
+            # 3. Hvis brukeren skal opp i nivå
             if target_level > last_announced:
+                announcement_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+
                 for lvl in range(last_announced + 1, target_level + 1):
-                    # 1. Oppdater og LAGRE med en gang!
                     self.level_tracking[user_id_str] = lvl
                     self.save_tracking_data()
 
-                    # 2. Send meldingen
-                    announcement_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
                     if announcement_channel:
-                        await announcement_channel.send(
-                            f"🎉 Congrats {message.author.mention}! Your level is now **{lvl}**!"
-                        )
-                        await asyncio.sleep(1)  # Liten pause så Discord ikke blir sint
+                        try:
+                            await announcement_channel.send(
+                                f"🎉 Congrats {message.author.mention}! Your level is now **{lvl}**!"
+                            )
+                            await asyncio.sleep(1.2)
+                        except Exception as e:
+                            logger.error(f"Kunne ikke sende melding: {e}")
+
+                    # Gi roller for hvert milestone-nivå brukeren passerer
+                    if lvl in ROLE_MILESTONES:
+                        role_name = f"Level {lvl}"
+                        role = discord.utils.get(message.guild.roles, name=role_name)
+                        if role and role not in message.author.roles:
+                            try:
+                                await message.author.add_roles(role)
+                            except:  # noqa: E722
+                                pass
 
     # --- Slash Commands ---
 
@@ -291,8 +264,8 @@ class LevelingSystem(commands.Cog):
         await interaction.response.defer()  # Siden bildegenerering kan ta 1-2 sekunder
 
         user_id = interaction.user.id
-        messages_sent = self.get_user_messages(user_id)
-        current_xp = messages_sent * XP_PER_MESSAGE
+        messages_sent, invite_xp = self.get_user_stats(user_id)
+        current_xp = (messages_sent * XP_PER_MESSAGE) + invite_xp
         current_level = get_level_from_xp(current_xp)
 
         # Kalkuleringer for baren
@@ -443,8 +416,9 @@ class LevelingSystem(commands.Cog):
                         with open(os.path.join(DATA_FOLDER, filename), "r") as f:
                             data = json.load(f)
                             msgs = data.get("messages_sent", 0)
-                            if msgs > 0:
-                                user_xp = msgs * XP_PER_MESSAGE
+                            invite_xp = data.get("invite_xp", 0)
+                            user_xp = msgs * XP_PER_MESSAGE + invite_xp
+                            if user_xp > 0:
                                 user_level = get_level_from_xp(user_xp)
                                 all_users.append(
                                     {
