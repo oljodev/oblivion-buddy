@@ -10,31 +10,45 @@ RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))
 RCON_PASSWORD = os.getenv("RCON_PASS", "secret")
 
+MC_NAME_RE = re.compile(r"^[A-Za-z0-9_]{3,16}$")
+
 BLACKLIST_NAMES = {
-    "there", "are", "of", "a", "max", "players", "online", "server",
-    "info", "list", "connected", "max", "joined", "left",
+    "there", "are", "of", "max", "players", "online", "server", "info",
+    "list", "connected", "joined", "left", "for", "get", "set", "value",
+    "playtime", "none", "null", "the", "and", "from", "with", "have",
+    "has", "was", "not", "out", "all", "any", "can", "cant", "true",
+    "false", "error", "warn", "warning", "debug", "trigger", "scoreboard",
+    "objective", "objectives", "score", "found", "unknown", "missing",
 }
 
 
 def _parse_player_list(response) -> list[str]:
-    """Parse RCON 'list' response into valid player names."""
+    """Parse RCON 'list' response into valid player names.
+
+    Returns [] if the response doesn't match the expected "...online: ..."
+    shape — better to miss one poll than to permanently poison analytics
+    with words from an error message.
+    """
     if isinstance(response, (tuple, list)):
         text = str(response[0])
     else:
         text = str(response) if response else ""
 
     match = re.search(r"online:?\s*(.*)", text, re.IGNORECASE)
-    raw = match.group(1) if match else text
+    if not match:
+        return []
+    raw = match.group(1)
 
     players = []
     for token in re.split(r"[,\s]+", raw):
         name = re.sub(r"^[^A-Za-z0-9_]+|[^A-Za-z0-9_]+$", "", token)
-        if (
-            2 <= len(name) <= 20
-            and not name.isdigit()
-            and name.lower() not in BLACKLIST_NAMES
-        ):
-            players.append(name)
+        if not MC_NAME_RE.match(name):
+            continue
+        if name.lower() in BLACKLIST_NAMES:
+            continue
+        if name.isdigit():
+            continue
+        players.append(name)
 
     seen = set()
     unique = []
