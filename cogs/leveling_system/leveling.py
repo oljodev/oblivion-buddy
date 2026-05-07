@@ -10,6 +10,7 @@ from datetime import datetime  # <-- NY: Trengs for cache-timing
 from easy_pil import Editor, load_image_async, Font  # <-- NY: Easy-pil imports
 from config import Channel, GUILD_ID as _GUILD_ID
 from cogs._shared import dev_mode, xp_store
+from cogs.leveling_system import pets as pets_mod
 
 logger = logging.getLogger("LevelingSystem")
 
@@ -195,6 +196,38 @@ class LevelingSystem(commands.Cog):
     def get_total_xp(self, user_id: int) -> int:
         return xp_store.get_total_xp(xp_store.get_user_stats(user_id))
 
+    async def _notify_pet_unlock(
+        self, member: discord.Member, pet: dict, level: int | None
+    ):
+        """DM the user that they unlocked a new pet. Best-effort.
+
+        ``level`` is ``None`` for the starter-pet grant.
+        """
+        sprite_path = pets_mod.pet_image_path(pet)
+        if level is None:
+            unlock_line = f"You've been given a starter companion: **{pet['name']}**."
+        else:
+            unlock_line = f"At level **{level}** you unlocked **{pet['name']}**."
+        embed = discord.Embed(
+            title="🎁 New companion unlocked!",
+            description=(
+                f"{unlock_line}\n"
+                f"Run `/pets` to view your collection and choose which one shows on your rank card."
+            ),
+            color=discord.Color.purple(),
+        )
+        try:
+            if sprite_path.exists():
+                file = discord.File(sprite_path, filename=pet["file"])
+                embed.set_thumbnail(url=f"attachment://{pet['file']}")
+                await member.send(embed=embed, file=file)
+            else:
+                await member.send(embed=embed)
+        except discord.Forbidden:
+            pass
+        except Exception as e:
+            logger.debug(f"Could not DM pet unlock to {member.id}: {e}")
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot or not isinstance(message.author, discord.Member):
@@ -208,6 +241,11 @@ class LevelingSystem(commands.Cog):
 
         async with self.lock:
             user_id_str = str(message.author.id)
+
+            # Grant starter pet on first message (no-op once flag is set).
+            starter_pet = pets_mod.grant_starter_pet(message.author.id)
+            if starter_pet is not None:
+                await self._notify_pet_unlock(message.author, starter_pet, level=None)
 
             # 1. Beregn nivå basert på alle XP-kilder
             stats = self.get_user_stats(message.author.id)
@@ -244,6 +282,11 @@ class LevelingSystem(commands.Cog):
                                 await message.author.add_roles(role)
                             except:  # noqa: E722
                                 pass
+
+                    # Gi pet for hvert 5. nivå opp til 100
+                    granted_pet = pets_mod.grant_pet_for_level(message.author.id, lvl)
+                    if granted_pet is not None:
+                        await self._notify_pet_unlock(message.author, granted_pet, lvl)
 
     # --- Slash Commands ---
 
@@ -289,9 +332,21 @@ class LevelingSystem(commands.Cog):
                 "❌ Internal Error: Missing image asset."
             )
 
-        # 2. Last og bearbeid profilbilde
-        avatar_image = await load_image_async(str(interaction.user.display_avatar.url))
-        avatar = Editor(avatar_image).resize((180, 180)).circle_image()
+        # 2. Last og bearbeid profilbilde — eller bytt det ut med pet-sprite
+        # om brukeren har valgt å vise pet i stedet via /pets.
+        active_pet = pets_mod.get_active_pet(user_id)
+        showing_pet = (
+            active_pet is not None and pets_mod.pet_image_path(active_pet).exists()
+        )
+        if showing_pet:
+            # Pets beholder sin opprinnelige rektangulære form (ingen circle_image),
+            # det ser bedre ut for pixel art-sprites.
+            avatar = Editor(str(pets_mod.pet_image_path(active_pet))).resize((180, 180))
+        else:
+            avatar_image = await load_image_async(
+                str(interaction.user.display_avatar.url)
+            )
+            avatar = Editor(avatar_image).resize((180, 180)).circle_image()
 
         # 3. Definer Fonts (Poppins er innebygd i easy-pil)
         # Bruker Regular variant, Bold for viktigere ting
@@ -308,7 +363,10 @@ class LevelingSystem(commands.Cog):
 
         # -- Profilbilde og outline --
         background.paste(avatar, (40, 35))  # x=40 (margin), y=35
-        background.ellipse((40, 35), 180, 180, outline=COLOR_WHITE, stroke_width=4)
+        if not showing_pet:
+            # Hvit ring rundt avatar — droppes når en pet vises, det ser
+            # renere ut uten innramming rundt sprite.
+            background.ellipse((40, 35), 180, 180, outline=COLOR_WHITE, stroke_width=4)
 
         # -- Brukernavn --
         # Justert for å matche stilen i eksempelet, til høyre for avatar

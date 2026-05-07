@@ -1,0 +1,122 @@
+[
+  {
+    "id": 1,
+    "name": "Fish",
+    "unlock_level": 5,
+    "file": "pet_01.png"
+  },
+  {
+    "id": 2,
+    "name": "Hamster",
+    "unlock_level": 10,
+    "file": "pet_02.png"
+  },
+  {
+    "id": 3,
+    "name": "Parrot",
+    "unlock_level": 15,
+    "file": "pet_03.png"
+  },
+  {
+    "id": 4,
+    "name": "Squirrel",
+    "unlock_level": 20,
+    "file": "pet_04.png"
+  },
+  {
+    "id": 5,
+    "name": "Fox",
+    "unlock_level": 25,
+    "file": "pet_05.png"
+  },
+  {
+    "id": 6,
+    "name": "Cat",
+    "unlock_level": 30,
+    "file": "pet_06.png"
+  },
+  {
+    "id": 7,
+    "name": "Red Panda",
+    "unlock_level": 35,
+    "file": "pet_07.png"
+  },
+  {
+    "id": 8,
+    "name": "Duck",
+    "unlock_level": 40,
+    "file": "pet_08.png"
+  },
+  {
+    "id": 9,
+    "name": "Pig",
+    "unlock_level": 45,
+    "file": "pet_09.png"
+  },
+  {
+    "id": 10,
+    "name": "Wolf",
+    "unlock_level": 50,
+    "file": "pet_10.png"
+  },
+  {
+    "id": 11,
+    "name": "Shiba",
+    "unlock_level": 55,
+    "file": "pet_11.png"
+  },
+  {
+    "id": 12,
+    "name": "Axolotl",
+    "unlock_level": 60,
+    "file": "pet_12.png"
+  },
+  {
+    "id": 13,
+    "name": "Shark",
+    "unlock_level": 65,
+    "file": "pet_13.png"
+  },
+  {
+    "id": 14,
+    "name": "Bear",
+    "unlock_level": 70,
+    "file": "pet_14.png"
+  },
+  {
+    "id": 15,
+    "name": "Panda",
+    "unlock_level": 75,
+    "file": "pet_15.png"
+  },
+  {
+    "id": 16,
+    "name": "Dragon",
+    "unlock_level": 80,
+    "file": "pet_16.png"
+  },
+  {
+    "id": 17,
+    "name": "Chicken",
+    "unlock_level": 85,
+    "file": "pet_17.png"
+  },
+  {
+    "id": 18,
+    "name": "Dolphin",
+    "unlock_level": 90,
+    "file": "pet_18.png"
+  },
+  {
+    "id": 19,
+    "name": "Turtle",
+    "unlock_level": 95,
+    "file": "pet_19.png"
+  },
+  {
+    "id": 20,
+    "name": "Chameleon",
+    "unlock_level": 100,
+    "file": "pet_20.png"
+  }
+]
