@@ -3,6 +3,8 @@ from discord.ext import commands
 import json
 import os
 
+from cogs._shared import dev_mode
+
 # Aligning with your existing data structure
 DATA_FOLDER = "./cogs/simple_stats/user_data"
 
@@ -65,6 +67,8 @@ class InviteRewards(commands.Cog):
         await self.update_invite_cache(guild)
 
         if inviter and not inviter.bot:
+            if not dev_mode.is_eligible_member(inviter):
+                return
             await self.reward_inviter(inviter, member)
 
     async def reward_inviter(self, inviter, new_member):
