@@ -128,7 +128,7 @@ async def load_cogs(
         full_path = os.path.join(cogs_path, filename)
 
         # --- 1. Sub-folders ---
-        if os.path.isdir(full_path) and not filename.startswith("__"):
+        if os.path.isdir(full_path) and not filename.startswith("_"):
             if folders is not None and filename not in folders:
                 continue
             if exclude_folders is not None and filename in exclude_folders:

@@ -53,6 +53,26 @@ def _load_json(path: Path, default):
         return default
 
 
+def get_mc_name(discord_id: int) -> str | None:
+    """Module-level helper: look up the linked Minecraft name for a Discord user."""
+    links = _load_json(LINKS_FILE, {})
+    info = links.get(str(discord_id))
+    return info.get("mc_name") if info else None
+
+
+def get_discord_id(mc_name: str) -> int | None:
+    """Module-level helper: reverse lookup Discord ID from a Minecraft name."""
+    links = _load_json(LINKS_FILE, {})
+    target = mc_name.lower()
+    for discord_id_str, info in links.items():
+        if info.get("mc_name", "").lower() == target:
+            try:
+                return int(discord_id_str)
+            except ValueError:
+                return None
+    return None
+
+
 class AccountLink(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
