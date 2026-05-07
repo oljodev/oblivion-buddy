@@ -9,6 +9,7 @@ import logging
 from datetime import datetime  # <-- NY: Trengs for cache-timing
 from easy_pil import Editor, load_image_async, Font  # <-- NY: Easy-pil imports
 from config import Channel, GUILD_ID as _GUILD_ID
+from cogs._shared import dev_mode, xp_store
 
 logger = logging.getLogger("LevelingSystem")
 
@@ -16,8 +17,8 @@ logger = logging.getLogger("LevelingSystem")
 # ⚙️ CONFIGURATION (EDIT THESE VALUES)
 # ==========================================
 
-TEST_MODE = False
-ADMIN_ROLES = ["Admin", "Owner"]  # Roles that can trigger XP in Test Mode
+# Dev-mode gating is centralised in cogs/_shared/dev_mode.py — flip TEST_MODE
+# there to gate every XP source (this cog included) to the Dev Team role.
 ANNOUNCEMENT_CHANNEL_ID = Channel.BOT_COMMANDS
 IGNORE_CHANNEL_IDS = [Channel.TICKET]
 
@@ -153,9 +154,7 @@ class LevelingSystem(commands.Cog):
                         # Vi leser bare msgs_sent, så det går raskt
                         with open(os.path.join(DATA_FOLDER, filename), "r") as f:
                             data = json.load(f)
-                            msgs = data.get("messages_sent", 0)
-                            invite_xp = data.get("invite_xp", 0)
-                            total_xp = msgs * XP_PER_MESSAGE + invite_xp
+                            total_xp = xp_store.get_total_xp(data)
                             if total_xp > 0:
                                 temp_users.append(
                                     {
@@ -189,17 +188,12 @@ class LevelingSystem(commands.Cog):
         except Exception as e:
             logger.error(f"Failed to save tracking data: {e}")
 
-    def get_user_stats(self, user_id: int) -> tuple[int, int]:
-        """Reads the existing json file to return (messages_sent, invite_xp)."""
-        path = os.path.join(DATA_FOLDER, f"{user_id}.json")
-        if os.path.exists(path):
-            try:
-                with open(path, "r") as f:
-                    data = json.load(f)
-                    return data.get("messages_sent", 0), data.get("invite_xp", 0)
-            except Exception:
-                pass
-        return 0, 0
+    def get_user_stats(self, user_id: int) -> dict:
+        """Returns full per-user stats dict (with all known XP fields)."""
+        return xp_store.get_user_stats(user_id)
+
+    def get_total_xp(self, user_id: int) -> int:
+        return xp_store.get_total_xp(xp_store.get_user_stats(user_id))
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -209,17 +203,15 @@ class LevelingSystem(commands.Cog):
         if message.channel.id in IGNORE_CHANNEL_IDS:
             return
 
-        if TEST_MODE:
-            is_admin = any(role.name in ADMIN_ROLES for role in message.author.roles)
-            if not is_admin:
-                return
+        if not dev_mode.is_eligible_member(message.author):
+            return
 
         async with self.lock:
             user_id_str = str(message.author.id)
 
-            # 1. Beregn nivå basert på meldinger + invite_xp
-            messages_sent, invite_xp = self.get_user_stats(message.author.id)
-            current_xp = (messages_sent * XP_PER_MESSAGE) + invite_xp
+            # 1. Beregn nivå basert på alle XP-kilder
+            stats = self.get_user_stats(message.author.id)
+            current_xp = xp_store.get_total_xp(stats)
             target_level = get_level_from_xp(current_xp)
 
             # 2. Last inn data på NYTT for å få med siste endringer fra andre meldinger
@@ -264,8 +256,8 @@ class LevelingSystem(commands.Cog):
         await interaction.response.defer()  # Siden bildegenerering kan ta 1-2 sekunder
 
         user_id = interaction.user.id
-        messages_sent, invite_xp = self.get_user_stats(user_id)
-        current_xp = (messages_sent * XP_PER_MESSAGE) + invite_xp
+        stats = self.get_user_stats(user_id)
+        current_xp = xp_store.get_total_xp(stats)
         current_level = get_level_from_xp(current_xp)
 
         # Kalkuleringer for baren
@@ -415,9 +407,7 @@ class LevelingSystem(commands.Cog):
                     try:
                         with open(os.path.join(DATA_FOLDER, filename), "r") as f:
                             data = json.load(f)
-                            msgs = data.get("messages_sent", 0)
-                            invite_xp = data.get("invite_xp", 0)
-                            user_xp = msgs * XP_PER_MESSAGE + invite_xp
+                            user_xp = xp_store.get_total_xp(data)
                             if user_xp > 0:
                                 user_level = get_level_from_xp(user_xp)
                                 all_users.append(
