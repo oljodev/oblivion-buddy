@@ -1,8 +1,12 @@
+import asyncio
+import logging
 import discord
 from discord.ext import commands
 from pathlib import Path
 import json
 from config import Channel, Role
+
+log = logging.getLogger(__name__)
 TICKET_CHANNEL_ID = Channel.TICKET
 OWNER_ROLE_ID = Role.OWNER
 ADMIN_ROLE_ID = Role.ADMIN
@@ -342,6 +346,36 @@ class TicketSelectionView(discord.ui.View):
         self.add_item(TicketDropdown())
 
 
+# --- Thread cleanup helpers ---
+async def _remove_from_active(thread_id: int) -> None:
+    data = load_data()
+    if thread_id in data.get("active_threads", []):
+        data["active_threads"].remove(thread_id)
+        save_data(data)
+
+
+async def _delete_ticket_thread(thread: discord.Thread) -> None:
+    # Small delay so the acknowledging message has a chance to deliver before
+    # the channel disappears.
+    await asyncio.sleep(1)
+    try:
+        await thread.delete()
+        return
+    except discord.Forbidden:
+        log.error(
+            "Missing permission to delete ticket thread %s (%s) — falling back to archive+lock",
+            thread.id,
+            thread.name,
+        )
+    except discord.HTTPException:
+        log.exception("Failed to delete ticket thread %s (%s)", thread.id, thread.name)
+
+    try:
+        await thread.edit(archived=True, locked=True)
+    except discord.HTTPException:
+        log.exception("Failed to archive/lock ticket thread %s", thread.id)
+
+
 # --- Persistence ---
 class TicketControls(discord.ui.View):
     def __init__(self):
@@ -351,21 +385,20 @@ class TicketControls(discord.ui.View):
         label="Claim", style=discord.ButtonStyle.primary, custom_id="claim_v2"
     )
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            f"✅ Ticket claimed by {interaction.user.mention}."
+        await interaction.channel.send(
+            f"✅ Ticket claimed by {interaction.user.mention}. Deleting…"
         )
-        button.disabled = True
-        await interaction.channel.delete()
+        await interaction.response.defer()
+        await _remove_from_active(interaction.channel.id)
+        await _delete_ticket_thread(interaction.channel)
 
     @discord.ui.button(
         label="Close", style=discord.ButtonStyle.danger, custom_id="close_v2"
     )
     async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
-        data = load_data()
-        if interaction.channel.id in data["active_threads"]:
-            data["active_threads"].remove(interaction.channel.id)
-            save_data(data)
-        await interaction.channel.delete()
+        await interaction.response.defer()
+        await _remove_from_active(interaction.channel.id)
+        await _delete_ticket_thread(interaction.channel)
 
 
 class TicketPanel(discord.ui.View):
