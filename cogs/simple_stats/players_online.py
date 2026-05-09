@@ -31,6 +31,8 @@ BLACKLIST_NAMES = {
     "has", "was", "not", "out", "all", "any", "can", "cant", "true",
     "false", "error", "warn", "warning", "debug", "trigger", "scoreboard",
     "objective", "objectives", "score", "found", "unknown", "missing",
+    "already", "exists", "name", "that", "exist", "this", "player",
+    "does", "did", "match", "matched", "matches",
 }
 
 
@@ -114,16 +116,23 @@ class PlayersOnline(commands.Cog):
         if not resp:
             return []
 
-        match = re.search(r"online:?\s*(.*)", resp, re.IGNORECASE)
+        # Require a colon — the standard "list" output is
+        # "There are X of a max of Y players online: Alice, Bob".
+        # Only the first line is considered; trailing diagnostic lines that
+        # may contain words like "already exists with that name" are ignored.
+        first_line = resp.splitlines()[0] if resp else ""
+        match = re.search(r"online:\s*(.*)", first_line, re.IGNORECASE)
         if not match:
             return []
         raw_names_str = match.group(1)
 
-        tokens = re.split(r"[,\s]+", raw_names_str)
+        # Names are comma-separated; splitting on whitespace too would let
+        # any space-separated word that happens to look like an MC name
+        # leak in if the server ever appends extra text after the list.
+        tokens = [t.strip() for t in raw_names_str.split(",")]
 
         valid_names = []
-        for t in tokens:
-            clean_name = re.sub(r"^[^A-Za-z0-9_]+|[^A-Za-z0-9_]+$", "", t)
+        for clean_name in tokens:
             if not MC_NAME_RE.match(clean_name):
                 continue
             if clean_name.lower() in BLACKLIST_NAMES:
