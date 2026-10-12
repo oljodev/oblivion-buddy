@@ -28,7 +28,7 @@ Oblivion Buddy is a Discord bot for a Minecraft SMP community, built with `disco
 
 | Path | Purpose |
 |---|---|
-| `features_with_minecraft/` | Server status (60s RCON poll), give/restart commands |
+| `features_with_minecraft/` | Server status (60s RCON poll), `!give` command |
 | `advanced_analytics/` | JSON-backed message/voice/MC login tracking, daily score |
 | `leveling_system/` | XP leveling, role rewards, rank cards via `easy_pil` |
 | `giveaway/` | Giveaway lifecycle (start, enter, reroll) |
@@ -36,6 +36,7 @@ Oblivion Buddy is a Discord bot for a Minecraft SMP community, built with `disco
 | `poll/` | Timed polls with reaction tracking |
 | `log/` | Boost notifications, crash/restart event logging |
 | `welcome/` | Welcome/goodbye image cards |
+| `help/` | `/help` and `!help` — built from loaded commands; staff section only for staff |
 | `security_and_filters/` | App verification with approve/kick/ban flow |
 
 ### Data Persistence

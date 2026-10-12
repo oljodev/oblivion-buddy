@@ -45,11 +45,11 @@ advanced_stats      = 0
 log                 = 0   # Bot/server logs
 
 [roles]
-owner               = 0   # Can use !give / !restart
-admin               = 0   # Can use !give / !restart
+owner               = 0   # Can use !give, /poll, /giveaway
+admin               = 0   # Can use !give, /poll, /giveaway
 helper              = 0
 dev_team            = 0
 member              = 0   # Given to every new human member
-giveaway_staff      = 0
+giveaway_staff      = 0   # Can use /giveaway, /reroll
 bot                 = 0   # Given to approved apps/bots
 connected_account   = 0   # Given to members with a linked Minecraft account

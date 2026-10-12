@@ -60,56 +60,6 @@ async def on_member_join(member: discord.Member):
         logger.info(f"App detected: {member.name}. Skipping auto-member role.")
 
 
-@bot.tree.command(name="help", description="Shows how to use the bot.", guild=GUILD_ID)
-async def help_command_for_users(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="🤖 Oblivion Buddy — Help",
-        description=(
-            "Here's everything you can do with me. "
-            "All commands are slash commands — just start typing `/` to see them in Discord."
-        ),
-        color=discord.Color.blurple(),
-    )
-
-    embed.add_field(
-        name="🔗 Minecraft",
-        value=(
-            "**/link** — Link your Discord to your Minecraft account. "
-            "Opens a panel with **Link**, **Unlink** and **Who am I?** buttons."
-        ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="📈 Levels & Stats",
-        value=(
-            "**/rank** — Show your level and XP as a styled card.\n"
-            "**/leaderboard** — See the server's XP leaderboard.\n"
-            "**/stats** `<user>` — Look up Discord activity stats for a user."
-        ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="🎮 Mini-games",
-        value=(
-            "**/trivia** — Start a 5-round Minecraft trivia game with escalating difficulty.\n"
-            "**/minesweeper** — Launch the Oblivion Minesweeper Discord Activity."
-        ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="❓ Other",
-        value="**/help** — Show this message.",
-        inline=False,
-    )
-
-    embed.set_footer(text="Tip: most replies are only visible to you.")
-
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
 async def load_cogs(
     target_bot: commands.Bot,
     logger: logging.Logger,
