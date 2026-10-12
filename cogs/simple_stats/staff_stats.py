@@ -2,12 +2,11 @@ import discord
 from discord.ext import commands, tasks
 from datetime import datetime
 import logging
-import json
-import os
 
 logger = logging.getLogger("ServerTracker")
 
 from config import Channel
+from cogs._shared.json_store import load_json, save_json
 
 STAFF_STATS_CHANNEL_ID = Channel.SIMPLE_STATS
 LOG_CHANNEL_ID = Channel.LOG
@@ -35,35 +34,17 @@ class ServerTracker(commands.Cog):
 
     # --- Persistence ---
     def load_stats(self):
-        if os.path.exists(STATS_FILE):
-            try:
-                with open(STATS_FILE, "r") as f:
-                    data = json.load(f)
-                    self.message_count = data.get("message_count", 0)
-                    self.reaction_count = data.get("reaction_count", 0)
-                    self.voice_events = data.get("voice_events", 0)
-                    self.message_to_edit_id = data.get("message_to_edit_id")
-                    self.announced_message_milestones = data.get(
-                        "announced_message_milestones", []
-                    )
-                    self.announced_reaction_milestones = data.get(
-                        "announced_reaction_milestones", []
-                    )
-                    self.announced_voice_milestones = data.get(
-                        "announced_voice_milestones", []
-                    )
-                    self.announced_member_milestones = data.get(
-                        "announced_member_milestones", []
-                    )
-                    logger.info(f"✅ Loaded stats from {STATS_FILE}")
-            except Exception as e:
-                logger.error(f"Failed to load stats: {e}")
-        else:
-            logger.info("No stats file found, starting fresh.")
-            self.announced_message_milestones = []
-            self.announced_reaction_milestones = []
-            self.announced_voice_milestones = []
-            self.announced_member_milestones = []
+        # Milepæl-listene settes alltid, også hvis fila mangler eller er korrupt
+        data = load_json(STATS_FILE, {})
+        self.message_count = data.get("message_count", 0)
+        self.reaction_count = data.get("reaction_count", 0)
+        self.voice_events = data.get("voice_events", 0)
+        self.message_to_edit_id = data.get("message_to_edit_id")
+        self.announced_message_milestones = data.get("announced_message_milestones", [])
+        self.announced_reaction_milestones = data.get("announced_reaction_milestones", [])
+        self.announced_voice_milestones = data.get("announced_voice_milestones", [])
+        self.announced_member_milestones = data.get("announced_member_milestones", [])
+        logger.info(f"✅ Loaded stats from {STATS_FILE}" if data else "No stats file found, starting fresh.")
 
     def save_stats(self):
         data = {
@@ -77,8 +58,7 @@ class ServerTracker(commands.Cog):
             "announced_member_milestones": self.announced_member_milestones,
         }
         try:
-            with open(STATS_FILE, "w") as f:
-                json.dump(data, f, indent=4)
+            save_json(STATS_FILE, data, indent=4)
             logger.debug("Stats saved to JSON")
         except Exception as e:
             logger.error(f"Failed to save stats: {e}")

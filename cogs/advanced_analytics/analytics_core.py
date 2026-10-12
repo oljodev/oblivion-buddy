@@ -1,6 +1,6 @@
-import json
-import os
 from datetime import datetime, timedelta
+
+from cogs._shared.json_store import load_json, save_json
 
 DATA_FILE = "./cogs/advanced_analytics/analytics.json"
 RETENTION_DAYS = 30
@@ -11,20 +11,11 @@ def get_today_str():
 
 
 def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    try:
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    except json.JSONDecodeError:
-        return {}
+    return load_json(DATA_FILE, {})
 
 
 def save_data(data):
-    # Create directory if it doesn't exist
-    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    save_json(DATA_FILE, data, indent=4)
 
 
 def prune_old_days(data):

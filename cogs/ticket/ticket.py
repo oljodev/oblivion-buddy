@@ -3,8 +3,8 @@ import logging
 import discord
 from discord.ext import commands
 from pathlib import Path
-import json
 from config import Channel, Role
+from cogs._shared.json_store import load_json, save_json
 
 log = logging.getLogger(__name__)
 TICKET_CHANNEL_ID = Channel.TICKET
@@ -18,18 +18,11 @@ DATA_FILE = Path(__file__).parent / "tickets.json"
 
 # --- JSON Helpers ---
 def load_data():
-    if not DATA_FILE.exists():
-        return {"panel_message_id": None, "active_threads": []}
-    with open(DATA_FILE, "r") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            return {"panel_message_id": None, "active_threads": []}
+    return load_json(DATA_FILE, {"panel_message_id": None, "active_threads": []})
 
 
 def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    save_json(DATA_FILE, data, indent=4)
 
 
 # --- Modals ---

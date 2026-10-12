@@ -14,6 +14,7 @@ from PIL import Image
 from config import Channel, GUILD_ID as _GUILD_ID
 from cogs._shared import dev_mode, xp_store
 from cogs._shared.images import fetch_avatar, fit_text
+from cogs._shared.json_store import load_json, save_json
 from cogs.leveling_system import pets as pets_mod
 
 logger = logging.getLogger("LevelingSystem")
@@ -258,19 +259,12 @@ class LevelingSystem(commands.Cog):
 
     def load_tracking_data(self) -> dict:
         """Loads the file that remembers the highest level announced for each user."""
-        if os.path.exists(TRACKING_FILE):
-            try:
-                with open(TRACKING_FILE, "r") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {}
+        return load_json(TRACKING_FILE, {})
 
     def save_tracking_data(self):
         """Saves the tracking data to disk."""
         try:
-            with open(TRACKING_FILE, "w") as f:
-                json.dump(self.level_tracking, f, indent=4)
+            save_json(TRACKING_FILE, self.level_tracking, indent=4)
         except Exception as e:
             logger.error(f"Failed to save tracking data: {e}")
 

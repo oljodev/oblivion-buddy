@@ -7,6 +7,8 @@ from aiomcrcon import Client
 import discord
 from discord.ext import commands, tasks
 
+from cogs._shared.json_store import load_json, save_json
+
 RCON_IP = os.getenv("RCON_IP", "localhost")
 RCON_PORT = int(os.getenv("RCON_PORT", 25575))
 RCON_PASSWORD = os.getenv("RCON_PASS", "secret")
@@ -71,11 +73,7 @@ class PlayersOnline(commands.Cog):
                 )
 
     def _load_storage(self):
-        try:
-            with open(self.storage_path, "r", encoding="utf-8") as f:
-                self.storage = json.load(f)
-        except Exception:
-            self.storage = {"message_id": 0, "players": {}}
+        self.storage = load_json(self.storage_path, {"message_id": 0, "players": {}})
 
         self.storage.setdefault("message_id", 0)
         self.storage.setdefault("players", {})
@@ -87,10 +85,7 @@ class PlayersOnline(commands.Cog):
         self.storage.setdefault("playtime_log", [])
 
     def _save_storage(self):
-        tmp = self.storage_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.storage, f, indent=2)
-        os.replace(tmp, self.storage_path)
+        save_json(self.storage_path, self.storage)
 
     async def _rcon_list(self):
         """Run 'list' via aiomcrcon.Client."""

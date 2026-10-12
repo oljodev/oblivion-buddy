@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import json
 import os
 from datetime import datetime
 import logging
@@ -9,6 +8,7 @@ import logging
 logger = logging.getLogger("UserStats")
 
 from config import GUILD_ID as _GUILD_ID
+from cogs._shared.json_store import load_json, save_json
 
 DATA_FOLDER = "./cogs/simple_stats/user_data"
 
@@ -27,26 +27,20 @@ class UserStats(commands.Cog):
         return os.path.join(DATA_FOLDER, f"{user_id}.json")
 
     def load_user_data(self, user_id: int) -> dict:
-        path = self.get_user_file(user_id)
-        if os.path.exists(path):
-            try:
-                with open(path, "r") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load data for user {user_id}: {e}")
-        return {
+        data = {
             "user_id": user_id,
             "messages_sent": 0,
             "reactions_used": 0,
             "voice_joins": 0,
             "last_message": None,
         }
+        # Fila deles med xp_store (XP-felter), så vi fyller bare inn manglende felter
+        data.update(load_json(self.get_user_file(user_id), {}))
+        return data
 
     def save_user_data(self, user_id: int, data: dict):
-        path = self.get_user_file(user_id)
         try:
-            with open(path, "w") as f:
-                json.dump(data, f, indent=4)
+            save_json(self.get_user_file(user_id), data, indent=4)
             logger.debug(f"Saved stats for {user_id}")
         except Exception as e:
             logger.error(f"Failed to save stats for {user_id}: {e}")

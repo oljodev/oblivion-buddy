@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from config import Channel, Role
+from cogs._shared.json_store import save_json
 UPDATE_CHANNEL_ID = Channel.BOT_STAFF
 MEMBER_ROLE_ID = Role.MEMBER
 
@@ -40,9 +41,7 @@ class AutoCurseforgeUpdates(commands.Cog):
 
     def save_last_version(self, version):
         """Save the current version to file."""
-        os.makedirs(os.path.dirname(VERSION_FILE), exist_ok=True)
-        with open(VERSION_FILE, "w") as f:
-            json.dump({"version": version}, f)
+        save_json(VERSION_FILE, {"version": version})
         self.last_version = version
 
     def _headers(self):

@@ -15,10 +15,10 @@ all use atomic file writes.
 """
 
 import asyncio
-import json
 import logging
 import os
-import tempfile
+
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("XPStore")
 
@@ -45,30 +45,12 @@ def _load(discord_id: int) -> dict:
     base = {"user_id": discord_id, "messages_sent": 0}
     for f in XP_FIELDS:
         base[f] = 0
-    if os.path.exists(path):
-        try:
-            with open(path, "r") as f:
-                data = json.load(f)
-            base.update(data)
-        except Exception as e:
-            logger.error(f"Failed to load {path}: {e}")
+    base.update(load_json(path, {}))
     return base
 
 
 def _save_atomic(discord_id: int, data: dict):
-    os.makedirs(DATA_FOLDER, exist_ok=True)
-    path = _user_path(discord_id)
-    fd, tmp = tempfile.mkstemp(prefix=f"{discord_id}.", suffix=".json.tmp", dir=DATA_FOLDER)
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(data, f, indent=4)
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    save_json(_user_path(discord_id), data, indent=4)
 
 
 def get_user_stats(discord_id: int) -> dict:

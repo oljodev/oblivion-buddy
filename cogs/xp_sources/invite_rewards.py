@@ -1,9 +1,9 @@
 import discord
 from discord.ext import commands
-import json
 import os
 
 from cogs._shared import dev_mode
+from cogs._shared.json_store import load_json, save_json
 
 # Aligning with your existing data structure
 DATA_FOLDER = "./cogs/simple_stats/user_data"
@@ -82,13 +82,7 @@ class InviteRewards(commands.Cog):
             "invites": 0,
             "invite_xp": 0,
         }
-        if os.path.exists(file_path):
-            try:
-                with open(file_path, "r") as f:
-                    loaded_data = json.load(f)
-                    user_data.update(loaded_data)
-            except Exception:
-                pass
+        user_data.update(load_json(file_path, {}))
 
         # 2. Increment stats
         user_data["invites"] = user_data.get("invites", 0) + 1
@@ -96,10 +90,8 @@ class InviteRewards(commands.Cog):
         current_invites = user_data["invites"]
 
         # 3. Save data back to the JSON file
-        os.makedirs(DATA_FOLDER, exist_ok=True)
         try:
-            with open(file_path, "w") as f:
-                json.dump(user_data, f, indent=4)
+            save_json(file_path, user_data, indent=4)
         except Exception as e:
             print(f"Failed to save invite data for {inviter.name}: {e}")
 

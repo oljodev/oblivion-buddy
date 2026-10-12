@@ -4,10 +4,9 @@ from discord.ext import commands
 from datetime import datetime, timedelta
 from discord.ui import View, Button, Modal, TextInput
 import logging
-import json
-import os
 import asyncio
 from config import GUILD_ID as _GUILD_ID, Role
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("Polls")
 
@@ -353,21 +352,14 @@ class Polls(commands.Cog):
 
     def _load_state(self):
         try:
-            if not os.path.exists(POLL_STATE_FILE):
-                return {}
-            with open(POLL_STATE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+            return load_json(POLL_STATE_FILE, {})
         except Exception as e:
             logger.error(f"⚠️ Failed to load poll state: {e}")
             return {}
 
     def _save_state(self, state: dict):
         try:
-            dirpath = os.path.dirname(POLL_STATE_FILE)
-            if dirpath and not os.path.exists(dirpath):
-                os.makedirs(dirpath, exist_ok=True)
-            with open(POLL_STATE_FILE, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2)
+            save_json(POLL_STATE_FILE, state)
         except Exception as e:
             logger.error(f"⚠️ Failed to save poll state: {e}")
 
