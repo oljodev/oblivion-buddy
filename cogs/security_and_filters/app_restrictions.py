@@ -4,13 +4,118 @@ import logging
 from config import Channel, Role
 LOG_CHANNEL_ID = Channel.MODERATION
 BOT_ROLE_ID = Role.BOT
+REVIEWER_ROLE_IDS = {Role.OWNER, Role.ADMIN}
 
 logger = logging.getLogger(__name__)
 
 
+def is_app_reviewer(member) -> bool:
+    """Bare eiere/admins (eller de med Administrator) kan godkjenne/avvise apper."""
+    if not isinstance(member, discord.Member):
+        return False
+    if member.guild_permissions.administrator:
+        return True
+    return any(r.id in REVIEWER_ROLE_IDS for r in member.roles)
+
+
+async def deny_if_not_reviewer(interaction: discord.Interaction) -> bool:
+    """Svarer med en feilmelding og returnerer True hvis brukeren ikke har tilgang."""
+    if is_app_reviewer(interaction.user):
+        return False
+    await interaction.response.send_message(
+        "🚫 Only the server owner or admins can review apps.", ephemeral=True
+    )
+    return True
+
+
+def verification_view(app_id: int, *, disabled: bool = False) -> discord.ui.View:
+    """Approve/Decline-knappene. App-ID-en ligger i custom_id, så de virker etter restart."""
+    view = discord.ui.View(timeout=None)
+    approve, decline = ApproveButton(app_id), DeclineButton(app_id)
+    approve.item.disabled = decline.item.disabled = disabled
+    view.add_item(approve)
+    view.add_item(decline)
+    return view
+
+
+class ApproveButton(
+    discord.ui.DynamicItem[discord.ui.Button], template=r"app_verify:approve:(?P<id>[0-9]+)"
+):
+    def __init__(self, app_id: int):
+        super().__init__(
+            discord.ui.Button(
+                label="Approve (Bot Role)",
+                style=discord.ButtonStyle.green,
+                custom_id=f"app_verify:approve:{app_id}",
+            )
+        )
+        self.app_id = app_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        if await deny_if_not_reviewer(interaction):
+            return
+        target = interaction.guild.get_member(self.app_id)
+        if target is None:
+            await interaction.response.send_message(
+                "⚠️ That app is no longer in the server.", ephemeral=True
+            )
+            await interaction.message.edit(view=verification_view(self.app_id, disabled=True))
+            return
+        role = interaction.guild.get_role(BOT_ROLE_ID)
+        if role is None:
+            await interaction.response.send_message(
+                f"Error: Could not find the Bot role ({int(BOT_ROLE_ID)}).", ephemeral=True
+            )
+            return
+        try:
+            await target.add_roles(role, reason=f"App approved by {interaction.user}")
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "⚠️ I can't give that role — my role is probably below the Bot role.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(
+            f"✅ {interaction.user.mention} approved {target.mention} — assigned the Bot role."
+        )
+        await interaction.message.edit(view=verification_view(self.app_id, disabled=True))
+
+
+class DeclineButton(
+    discord.ui.DynamicItem[discord.ui.Button], template=r"app_verify:decline:(?P<id>[0-9]+)"
+):
+    def __init__(self, app_id: int):
+        super().__init__(
+            discord.ui.Button(
+                label="Decline",
+                style=discord.ButtonStyle.red,
+                custom_id=f"app_verify:decline:{app_id}",
+            )
+        )
+        self.app_id = app_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        if await deny_if_not_reviewer(interaction):
+            return
+        # Nedtrekksmenyen vises bare for den som trykket
+        await interaction.response.send_message(
+            "Select an action for this app:",
+            view=DeclineView(self.app_id, interaction.message),
+            ephemeral=True,
+        )
+
+
 class DeclineDropdown(discord.ui.Select):
-    def __init__(self, target_bot: discord.Member, original_message: discord.Message):
-        self.target_bot = target_bot
+    def __init__(self, app_id: int, original_message: discord.Message):
+        self.app_id = app_id
         self.original_message = original_message
 
         options = [
@@ -34,79 +139,60 @@ class DeclineDropdown(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        if await deny_if_not_reviewer(interaction):
+            return
         choice = self.values[0]
-        result_text = ""
+        target = interaction.guild.get_member(self.app_id)
+        name = target.name if target else f"app {self.app_id}"
+        reason = f"App declined by {interaction.user}"
 
         try:
             if choice == "Ban":
-                await self.target_bot.ban(reason="App declined by administrator.")
-                result_text = f"🔨 {interaction.user.mention} decided to **Ban** {self.target_bot.name}."
+                # Ban virker også om appen allerede har forlatt serveren
+                await interaction.guild.ban(discord.Object(id=self.app_id), reason=reason)
+                result_text = f"🔨 {interaction.user.mention} decided to **Ban** {name}."
             elif choice == "Kick":
-                await self.target_bot.kick(reason="App declined by administrator.")
-                result_text = f"👢 {interaction.user.mention} decided to **Kick** {self.target_bot.name}."
+                if target is None:
+                    await interaction.response.send_message(
+                        "⚠️ That app is no longer in the server.", ephemeral=True
+                    )
+                    return
+                await target.kick(reason=reason)
+                result_text = f"👢 {interaction.user.mention} decided to **Kick** {name}."
             else:
-                result_text = f"⏹️ {interaction.user.mention} chose **No Action** for {self.target_bot.mention} (remains restricted)."
-
-            # Update the original embed to disable buttons
-            view = discord.ui.View.from_message(self.original_message)
-            for item in view.children:
-                item.disabled = True
-            await self.original_message.edit(view=view)
-
-            # Post the result publicly in the channel
-            await interaction.channel.send(result_text)
-            await interaction.response.send_message("Action completed.", ephemeral=True)
-
+                result_text = f"⏹️ {interaction.user.mention} chose **No Action** for <@{self.app_id}> (remains restricted)."
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "⚠️ I don't have permission to do that (check Kick/Ban Members and my role position).",
+                ephemeral=True,
+            )
+            return
         except Exception as e:
+            logger.exception("App decline action failed")
             await interaction.response.send_message(f"Error: {e}", ephemeral=True)
+            return
+
+        await self.original_message.edit(view=verification_view(self.app_id, disabled=True))
+        await interaction.response.send_message("Action completed.", ephemeral=True)
+        await interaction.channel.send(result_text)
 
 
 class DeclineView(discord.ui.View):
-    def __init__(self, target_bot: discord.Member, original_message: discord.Message):
+    def __init__(self, app_id: int, original_message: discord.Message):
         super().__init__(timeout=60)
-        self.add_item(DeclineDropdown(target_bot, original_message))
-
-
-class BotVerificationView(discord.ui.View):
-    def __init__(self, target_bot: discord.Member):
-        super().__init__(timeout=None)  # Keeps buttons functional after bot restart
-        self.target_bot = target_bot
-
-    @discord.ui.button(label="Approve (Bot Role)", style=discord.ButtonStyle.green)
-    async def approve(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        role = interaction.guild.get_role(BOT_ROLE_ID)
-        if role:
-            await self.target_bot.add_roles(role)
-            await interaction.response.send_message(
-                f"✅ {self.target_bot.mention} has been assigned the Bot role.",
-                ephemeral=False,
-            )
-
-            # Disable buttons after use
-            for item in self.children:
-                item.disabled = True
-            await interaction.message.edit(view=self)
-        else:
-            await interaction.response.send_message(
-                "Error: Could not find Bot Role ID.", ephemeral=True
-            )
-
-    @discord.ui.button(label="Decline", style=discord.ButtonStyle.red)
-    async def decline(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        # Sends the dropdown menu as an ephemeral message only visible to the admin
-        view = DeclineView(self.target_bot, interaction.message)
-        await interaction.response.send_message(
-            "Select an action for this app:", view=view, ephemeral=True
-        )
+        self.add_item(DeclineDropdown(app_id, original_message))
 
 
 class BotManager(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    async def cog_load(self):
+        # Gjør Approve/Decline-knappene aktive igjen etter restart
+        self.bot.add_dynamic_items(ApproveButton, DeclineButton)
+
+    async def cog_unload(self):
+        self.bot.remove_dynamic_items(ApproveButton, DeclineButton)
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
@@ -153,8 +239,7 @@ class BotManager(commands.Cog):
                 if member.avatar:
                     embed.set_thumbnail(url=member.avatar.url)
 
-                view = BotVerificationView(member)
-                await log_channel.send(embed=embed, view=view)
+                await log_channel.send(embed=embed, view=verification_view(member.id))
 
 
 async def setup(bot):

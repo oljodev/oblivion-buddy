@@ -199,7 +199,24 @@ async def run_minigame_bot():
         folders=MINIGAME_COG_FOLDERS,
         include_top_level_files=False,
     )
-    await minigame_bot.start(MINIGAME_DISCORD_TOKEN)
+    try:
+        await minigame_bot.start(MINIGAME_DISCORD_TOKEN)
+    except discord.LoginFailure:
+        logger.error(
+            "❌ Minigame bot: MINIGAME_DISCORD_TOKEN is invalid — mini-games are offline. "
+            "The main bot keeps running."
+        )
+    except discord.PrivilegedIntentsRequired:
+        logger.error(
+            "❌ Minigame bot: enable Server Members and Message Content intents for the "
+            "minigame app in the Developer Portal — mini-games are offline. The main bot keeps running."
+        )
+    except Exception:
+        # Minigame-boten skal aldri ta ned hovedboten
+        logger.exception("❌ Minigame bot crashed — mini-games are offline. The main bot keeps running.")
+    finally:
+        if not minigame_bot.is_closed():
+            await minigame_bot.close()
 
 
 async def main():
@@ -219,5 +236,14 @@ if __name__ == "__main__":
 
     except discord.errors.LoginFailure:
         logger.error("Failed to log in. Check if your DISCORD_TOKEN is correct.")
-    except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}")
+        sys.exit(1)
+    except discord.PrivilegedIntentsRequired:
+        logger.error(
+            "Enable Server Members and Message Content intents for the bot in the "
+            "Discord Developer Portal (Bot → Privileged Gateway Intents)."
+        )
+        sys.exit(1)
+    except Exception:
+        # Ikke-null exit-kode, så systemd (Restart=on-failure) starter boten på nytt
+        logger.exception("An unexpected error occurred")
+        sys.exit(1)
