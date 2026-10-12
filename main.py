@@ -4,6 +4,13 @@ from dotenv import load_dotenv
 import os
 import logging
 import asyncio
+from pathlib import Path
+
+from config import GUILD_ID as _GUILD_ID, Role
+
+# Alle relative stier (./cogs, JSON-data, bilder) regnes fra prosjektmappen,
+# så boten fungerer uansett hvilken mappe den startes fra.
+os.chdir(Path(__file__).resolve().parent)
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -30,9 +37,9 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 minigame_bot = commands.Bot(command_prefix="!", intents=intents)
 
-GUILD_ID = discord.Object(id=1422932147550818507)
+GUILD_ID = discord.Object(id=_GUILD_ID)
 
-MEMBER_ROLE_ID = 1422937958897422406
+MEMBER_ROLE_ID = Role.MEMBER
 
 
 @bot.event
@@ -181,10 +188,13 @@ async def on_ready():
 
     # 3. Sync kommandoer til en spesifikk guild (server)
     try:
-        guild = discord.Object(id=1422932147550818507)
-        # Bruk bot.tree.copy_global_to(guild=guild) hvis du har globale kommandoer du vil teste
-        synced = await bot.tree.sync(guild=guild)
-        print(f"Synced {len(synced)} commands to the guild {guild.id}.")
+        if bot.get_guild(GUILD_ID.id) is None:
+            logger.warning(
+                f"The bot is not in guild {GUILD_ID.id} (GUILD_ID in config.py) — "
+                "slash commands like /rank will not show up in your server."
+            )
+        synced = await bot.tree.sync(guild=GUILD_ID)
+        print(f"Synced {len(synced)} commands to the guild {GUILD_ID.id}.")
 
     except Exception as e:
         print(f"Error syncing commands: {e}")

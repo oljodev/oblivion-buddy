@@ -1,15 +1,19 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+import io
 import json
 import os
 import math
 import asyncio
 import logging
 from datetime import datetime  # <-- NY: Trengs for cache-timing
-from easy_pil import Editor, load_image_async, Font  # <-- NY: Easy-pil imports
+from pathlib import Path
+from easy_pil import Editor, Font
+from PIL import Image
 from config import Channel, GUILD_ID as _GUILD_ID
 from cogs._shared import dev_mode, xp_store
+from cogs._shared.images import fetch_avatar, fit_text
 from cogs.leveling_system import pets as pets_mod
 
 logger = logging.getLogger("LevelingSystem")
@@ -32,7 +36,7 @@ XP_PER_MESSAGE = 10
 DATA_FOLDER = "./cogs/simple_stats/user_data"
 TRACKING_FILE = "./cogs/leveling_system/level_tracking.json"
 
-BACKGROUND_IMAGE_PATH = "./cogs/leveling_system/leveling_image.png"
+BACKGROUND_IMAGE_PATH = Path(__file__).parent / "leveling_image.png"
 
 # ==========================================
 # 🧮 MATH & HELPER FUNCTIONS
@@ -51,6 +55,91 @@ def get_level_from_xp(xp: int) -> int:
 def get_xp_for_level(level: int) -> int:
     """Calculates total XP required to reach a specific level."""
     return 50 * (level**2) + 50 * level
+
+
+# ==========================================
+# 🎨 RANK CARD RENDERING
+# ==========================================
+
+COLOR_WHITE = "#FFFFFF"
+COLOR_GREEN = "#00E676"  # En lys og klar grønn farge
+COLOR_BAR_BG = "#332A4A"  # Mørk lilla/grå for bakgrunnen på baren
+
+CARD_SIZE = (900, 250)
+AVATAR_POS = (40, 35)
+AVATAR_SIZE = 180
+RIGHT_EDGE = 850  # Høyre marg for tekst og bar
+BAR_X, BAR_Y, BAR_WIDTH, BAR_HEIGHT = 250, 150, 600, 40
+
+
+def render_rank_card(
+    avatar: Image.Image,
+    is_pet: bool,
+    display_name: str,
+    level: int,
+    rank: int | None,
+    xp_in_level: int,
+    needed_in_level: int,
+) -> io.BytesIO:
+    """Tegner rank-kortet. Synkron (PIL), så den kjøres i en egen tråd."""
+    background = Editor(str(BACKGROUND_IMAGE_PATH)).resize(CARD_SIZE)
+
+    # -- Profilbilde / pet --
+    if is_pet:
+        # Pixel art skaleres med NEAREST så den forblir skarp, og beholder sin
+        # rektangulære form uten hvit ring.
+        sprite = avatar.resize((AVATAR_SIZE, AVATAR_SIZE), Image.NEAREST)
+        background.paste(Editor(sprite), AVATAR_POS)
+    else:
+        profile = Editor(avatar).resize((AVATAR_SIZE, AVATAR_SIZE)).circle_image()
+        background.paste(profile, AVATAR_POS)
+        background.ellipse(
+            AVATAR_POS, AVATAR_SIZE, AVATAR_SIZE, outline=COLOR_WHITE, stroke_width=4
+        )
+
+    font_level = Font.poppins(size=50, variant="bold")
+    font_small = Font.poppins(size=25, variant="regular")
+
+    # -- Level (øverst til høyre) og Rank rett til venstre for den --
+    level_text = f"LEVEL {level}"
+    background.text(
+        (RIGHT_EDGE, 40), level_text, color=COLOR_WHITE, font=font_level, align="right"
+    )
+    rank_text = f"RANK #{rank}" if rank is not None else "UNRANKED"
+    rank_right = RIGHT_EDGE - int(font_level.getlength(level_text)) - 20
+    background.text(
+        (rank_right, 47), rank_text, color=COLOR_WHITE, font=font_small, align="right"
+    )
+
+    # -- XP-tall over baren, høyrejustert --
+    xp_text = f"{xp_in_level:,} / {needed_in_level:,} XP"
+    background.text(
+        (RIGHT_EDGE, BAR_Y - 35),
+        xp_text,
+        color=COLOR_WHITE,
+        font=font_small,
+        align="right",
+    )
+
+    # -- Brukernavn: krympes/kuttes så det ikke kolliderer med XP-teksten --
+    name_max_width = RIGHT_EDGE - int(font_small.getlength(xp_text)) - 25 - BAR_X
+    name, font_name = fit_text(display_name, "regular", 35, 22, name_max_width)
+    background.text((BAR_X, 80), name, color=COLOR_WHITE, font=font_name)
+
+    # -- XP-bar --
+    background.rectangle(
+        (BAR_X, BAR_Y), BAR_WIDTH, BAR_HEIGHT, fill=COLOR_BAR_BG, radius=20
+    )
+    progress = min(xp_in_level / needed_in_level, 1) if needed_in_level > 0 else 1
+    filled_width = int(BAR_WIDTH * progress)
+    if filled_width > 0:
+        # Minst like bred som høyden, ellers blir den avrundede enden bare en strek
+        filled_width = max(filled_width, BAR_HEIGHT)
+        background.rectangle(
+            (BAR_X, BAR_Y), filled_width, BAR_HEIGHT, fill=COLOR_GREEN, radius=20
+        )
+
+    return background.image_bytes
 
 
 # ==========================================
@@ -153,16 +242,12 @@ class LevelingSystem(commands.Cog):
                 if filename.endswith(".json") and filename != "level_tracking.json":
                     try:
                         # Vi leser bare msgs_sent, så det går raskt
+                        user_id = int(filename[: -len(".json")])
                         with open(os.path.join(DATA_FOLDER, filename), "r") as f:
                             data = json.load(f)
                             total_xp = xp_store.get_total_xp(data)
                             if total_xp > 0:
-                                temp_users.append(
-                                    {
-                                        "user_id": data.get("user_id"),
-                                        "xp": total_xp,
-                                    }
-                                )
+                                temp_users.append({"user_id": user_id, "xp": total_xp})
                     except Exception:
                         pass
 
@@ -298,158 +383,56 @@ class LevelingSystem(commands.Cog):
     async def rank(self, interaction: discord.Interaction):
         await interaction.response.defer()  # Siden bildegenerering kan ta 1-2 sekunder
 
-        user_id = interaction.user.id
-        stats = self.get_user_stats(user_id)
-        current_xp = xp_store.get_total_xp(stats)
-        current_level = get_level_from_xp(current_xp)
-
-        # Kalkuleringer for baren
-        xp_needed_for_next = get_xp_for_level(current_level + 1)
-        xp_achieved_in_prev = get_xp_for_level(current_level)
-
-        # XP i *nåværende* nivå (fraction)
-        xp_in_level = current_xp - xp_achieved_in_prev
-        needed_in_level = xp_needed_for_next - xp_achieved_in_prev
-
-        # Beregn Rank # (Posisjon) ved hjelp av cachen
-        await self.update_leaderboard_cache()
-        user_rank = "N/A"
-        for i, user_data in enumerate(self.cached_ranks, start=1):
-            if user_data["user_id"] == user_id:
-                user_rank = i
-                break
-
-        # ==========================================
-        # 🎨 EASY-PIL IMAGE GENERATION (THE CORE)
-        # ==========================================
-
-        # 1. Canvas og Bakgrunn (Sørg for at filen finnes!)
         try:
-            background = Editor(BACKGROUND_IMAGE_PATH).resize((900, 250))
-        except FileNotFoundError:
-            logger.error(f"Missing background image at {BACKGROUND_IMAGE_PATH}")
-            return await interaction.followup.send(
-                "❌ Internal Error: Missing image asset."
+            user = interaction.user
+            stats = self.get_user_stats(user.id)
+            current_xp = xp_store.get_total_xp(stats)
+            current_level = get_level_from_xp(current_xp)
+
+            # XP i *nåværende* nivå
+            xp_in_level = current_xp - get_xp_for_level(current_level)
+            needed_in_level = get_xp_for_level(current_level + 1) - get_xp_for_level(
+                current_level
             )
 
-        # 2. Last og bearbeid profilbilde — eller bytt det ut med pet-sprite
-        # om brukeren har valgt å vise pet i stedet via /pets.
-        active_pet = pets_mod.get_active_pet(user_id)
-        showing_pet = (
-            active_pet is not None and pets_mod.pet_image_path(active_pet).exists()
-        )
-        if showing_pet:
-            # Pets beholder sin opprinnelige rektangulære form (ingen circle_image),
-            # det ser bedre ut for pixel art-sprites.
-            avatar = Editor(str(pets_mod.pet_image_path(active_pet))).resize((180, 180))
-        else:
-            avatar_image = await load_image_async(
-                str(interaction.user.display_avatar.url)
+            # Rank # (posisjon) — regnes ut fra cachen, men brukerens egen XP er
+            # alltid fersk, så cachen kan være opptil 60s gammel uten at det gir N/A.
+            user_rank = None
+            if current_xp > 0:
+                await self.update_leaderboard_cache()
+                user_rank = 1 + sum(
+                    1
+                    for u in self.cached_ranks
+                    if u["xp"] > current_xp and u["user_id"] != user.id
+                )
+
+            # Pet-sprite i stedet for profilbilde hvis brukeren har valgt det i /pets
+            active_pet = pets_mod.get_active_pet(user.id)
+            pet_path = pets_mod.pet_image_path(active_pet) if active_pet else None
+            if pet_path is not None and pet_path.exists():
+                avatar, is_pet = Image.open(pet_path).convert("RGBA"), True
+            else:
+                avatar, is_pet = await fetch_avatar(user), False
+
+            image = await asyncio.to_thread(
+                render_rank_card,
+                avatar,
+                is_pet,
+                user.display_name,
+                current_level,
+                user_rank,
+                xp_in_level,
+                needed_in_level,
             )
-            avatar = Editor(avatar_image).resize((180, 180)).circle_image()
-
-        # 3. Definer Fonts (Poppins er innebygd i easy-pil)
-        # Bruker Regular variant, Bold for viktigere ting
-        font_bold_lg = Font.poppins(size=50, variant="bold")
-        font_medium = Font.poppins(size=35, variant="regular")
-        font_small = Font.poppins(size=25, variant="regular")
-
-        # 4. Farger (Hex koder)
-        COLOR_WHITE = "#FFFFFF"
-        COLOR_GREEN = "#00E676"  # En lys og klar grønn farge
-        COLOR_BAR_BG = "#332A4A"  # Mørk lilla/grå for bakgrunnen på baren
-
-        # 5. Tegn elementer på bakgrunnen
-
-        # -- Profilbilde og outline --
-        background.paste(avatar, (40, 35))  # x=40 (margin), y=35
-        if not showing_pet:
-            # Hvit ring rundt avatar — droppes når en pet vises, det ser
-            # renere ut uten innramming rundt sprite.
-            background.ellipse((40, 35), 180, 180, outline=COLOR_WHITE, stroke_width=4)
-
-        # -- Brukernavn --
-        # Justert for å matche stilen i eksempelet, til høyre for avatar
-        # Bruker display_name for å unngå discriminators (#0000)
-        background.text(
-            (250, 80),  # Posisjon: x, y
-            f"{interaction.user.display_name}",
-            color=COLOR_WHITE,
-            font=font_medium,
-        )
-
-        # -- Rank # og Level (Høyre hjørne) --
-        # Vi flytter disse litt lenger inn fra kanten for margin
-        # Level (1) [Hvit tekst, Bold]
-        background.text(
-            (850, 40),  # Posisjon helt til høyre, y=40
-            f"LEVEL {current_level}",
-            color=COLOR_WHITE,
-            font=font_bold_lg,
-            align="right",
-        )
-
-        # Rank #XXXX [Hvit tekst, Regular]
-        # Justert x-posisjon for å stå til venstre for Level
-        rank_text = f"RANK #{user_rank}"
-
-        background.text(
-            (630, 47),  # Posisjon litt til venstre for LEVEL, y=47 (litt lavere)
-            rank_text,
-            color=COLOR_WHITE,
-            font=font_small,
-            align="right",
-        )
-
-        # -- XP Bar og XP-tall --
-        bar_x = 250
-        bar_y = 150
-        bar_width = 600
-        bar_height = 40
-
-        # Bakgrunnen på XP baren (mørk)
-        background.rectangle(
-            (bar_x, bar_y),
-            bar_width,
-            bar_height,
-            fill=COLOR_BAR_BG,
-            radius=20,  # Avrundede hjørner
-        )
-
-        # Fyllet på baren (Lys Grønn)
-        progress = xp_in_level / needed_in_level if needed_in_level > 0 else 1
-        filled_width = int(bar_width * progress)
-
-        background.rectangle(
-            (bar_x, bar_y),
-            filled_width,
-            bar_height,
-            fill=COLOR_GREEN,
-            radius=20,  # Avrundede hjørner
-        )
-
-        # XP Tallene (0 / 155 XP) [Hvit tekst, Regular]
-        # Plassert til høyre over baren, under LEVEL-teksten
-        xp_fraction_text = f"{xp_in_level:,} / {needed_in_level:,} XP"
-
-        background.text(
-            (
-                850,
-                bar_y - 35,
-            ),  # X=850 sørger for at den flukter med baren og Level-teksten
-            xp_fraction_text,
-            color=COLOR_WHITE,
-            font=font_small,
-            align="right",  # Endret fra center til right
-        )
-
-        # ==========================================
-        # 📤 SEND THE IMAGE
-        # ==========================================
-
-        # Oppretter filen i minnet (ikke lagrer den på disk)
-        file = discord.File(fp=background.image_bytes, filename="rank_card.png")
-        await interaction.followup.send(file=file)
+            await interaction.followup.send(
+                file=discord.File(fp=image, filename="rank_card.png")
+            )
+        except Exception:
+            logger.exception(f"Failed to generate rank card for {interaction.user}")
+            await interaction.followup.send(
+                "❌ Something went wrong while generating your rank card. Please try again later.",
+                ephemeral=True,
+            )
 
     @app_commands.command(
         name="leaderboard", description="View the server's XP leaderboard"
