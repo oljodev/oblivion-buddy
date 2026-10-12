@@ -1,0 +1,55 @@
+# Server-specific Discord IDs for Oblivion Buddy.
+#
+# HOW TO USE
+#   1. Copy this file to `server_config.toml` (same folder). It's git-ignored.
+#   2. In Discord: User Settings → Advanced → turn on Developer Mode.
+#   3. Right-click your server / a channel / a role → "Copy ID", and paste it below.
+#
+# Any line you delete (or comment out with #) keeps the Oblivion SMP default,
+# which won't exist in your server. Use 0 for things you don't have.
+# On startup the bot logs every channel and role it can't find.
+# Write numbers without quotes.
+
+[server]
+guild_id = 0                # Your server's ID (right-click the server icon)
+minesweeper_app_id = 0      # Discord Activity app for /minesweeper (0 = disable /minesweeper)
+curseforge_modpack_id = 0   # CurseForge modpack to announce updates for (0 = disable)
+
+[channels]
+welcome             = 0   # Welcome/goodbye cards
+rules               = 0
+how_to_join         = 0
+announcements       = 0
+updates             = 0
+giveaways_and_polls = 0
+ticket              = 0   # Ticket panel (no XP here)
+general             = 0
+showcase            = 0
+memes               = 0
+bot_commands        = 0   # Level-up announcements
+status              = 0   # Minecraft server status
+mc_chat             = 0
+shops               = 0
+suggestions         = 0
+general_voice       = 0
+events_voice        = 0
+staff_chat          = 0
+norwegian_staff     = 0
+moderation          = 0   # New app approval requests
+bot_staff           = 0   # CurseForge update announcements
+links               = 0
+features            = 0
+notes               = 0
+simple_stats        = 0
+advanced_stats      = 0
+log                 = 0   # Bot/server logs
+
+[roles]
+owner               = 0   # Can use !give / !restart
+admin               = 0   # Can use !give / !restart
+helper              = 0
+dev_team            = 0
+member              = 0   # Given to every new human member
+giveaway_staff      = 0
+bot                 = 0   # Given to approved apps/bots
+connected_account   = 0   # Given to members with a linked Minecraft account

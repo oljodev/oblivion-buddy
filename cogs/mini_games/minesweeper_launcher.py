@@ -1,11 +1,15 @@
+import logging
+
 import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
-from config import GUILD_ID
+from config import GUILD_ID, MINESWEEPER_APP_ID, Channel
 
-APPLICATION_ID = 1498035754566160454
-VOICE_CHANNEL_ID = 1422939363100065912
+logger = logging.getLogger("Minesweeper")
+
+APPLICATION_ID = MINESWEEPER_APP_ID
+VOICE_CHANNEL_ID = Channel.GENERAL_VOICE
 EMBED_COLOR = 0xFFCC00
 
 
@@ -68,4 +72,7 @@ class MinesweeperLauncher(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
+    if not APPLICATION_ID:
+        logger.info("minesweeper_app_id is 0 — /minesweeper disabled.")
+        return
     await bot.add_cog(MinesweeperLauncher(bot))

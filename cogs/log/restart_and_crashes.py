@@ -1,17 +1,11 @@
-import os
 import logging
 from aiomcrcon import Client
 import discord
 from discord.ext import commands, tasks
-from dotenv import load_dotenv
-
-load_dotenv()
 from config import Channel
 LOG_CHANNEL_ID = Channel.LOG
 
-RCON_IP = os.getenv("RCON_IP", "localhost")
-RCON_PORT = int(os.getenv("RCON_PORT", 25575))
-RCON_PASS = os.getenv("RCON_PASS", "secret")
+from config import RCON_IP, RCON_PORT, RCON_PASS
 
 logger = logging.getLogger(__name__)
 

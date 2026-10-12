@@ -14,7 +14,6 @@ snapshot we do have is used as the baseline.
 
 import json
 import logging
-import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,9 +22,7 @@ from aiomcrcon import Client
 
 logger = logging.getLogger("GiveawayAutoEntry")
 
-RCON_IP = os.getenv("RCON_IP", "localhost")
-RCON_PORT = int(os.getenv("RCON_PORT", 25575))
-RCON_PASS = os.getenv("RCON_PASS", "secret")
+from config import RCON_IP, RCON_PORT, RCON_PASS
 
 LINKS_FILE = Path(__file__).parent.parent / "account_link" / "links.json"
 SNAPSHOTS_FILE = Path(__file__).parent / "playtime_snapshots.json"

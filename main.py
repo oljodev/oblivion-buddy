@@ -1,20 +1,20 @@
 import discord
 from discord.ext import commands
-from dotenv import load_dotenv
 import os
+import sys
 import logging
 import asyncio
 from pathlib import Path
 
+import config
 from config import GUILD_ID as _GUILD_ID, Role
 
 # Alle relative stier (./cogs, JSON-data, bilder) regnes fra prosjektmappen,
 # så boten fungerer uansett hvilken mappe den startes fra.
 os.chdir(Path(__file__).resolve().parent)
 
-load_dotenv()
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-MINIGAME_DISCORD_TOKEN = os.getenv("MINIGAME_DISCORD_TOKEN")
+DISCORD_TOKEN = config.DISCORD_TOKEN
+MINIGAME_DISCORD_TOKEN = config.MINIGAME_DISCORD_TOKEN
 
 # Cogs (sub-folder names) som skal kjøres på minigame-boten i stedet for hovedboten.
 MINIGAME_COG_FOLDERS = {"mini_games"}
@@ -156,6 +156,9 @@ async def load_cogs(
                 try:
                     await target_bot.load_extension(module_name)
                     logger.info(f"✅ Loaded Cog (Sub-Module): {module_name}")
+                except commands.NoEntryPointError:
+                    # Hjelpemoduler (uten setup()) er ikke cogs — ikke en feil
+                    logger.debug(f"Skipping helper module {module_name} (no setup()).")
                 except Exception as e:
                     logger.error(f"❌ Can't load package {module_name}. Error: {e}")
 
@@ -169,6 +172,27 @@ async def load_cogs(
                 logger.info(f"✅ Loaded Cog (File): {module_name}")
             except Exception as e:
                 logger.error(f"❌ Can't load package {module_name}. Error: {e}")
+
+
+def check_server_config():
+    """Logger tydelig hvilke ID-er i server_config.toml / config.py som ikke stemmer."""
+    guild = bot.get_guild(GUILD_ID.id)
+    if guild is None:
+        logger.warning(
+            f"⚠️ The bot is not in guild {GUILD_ID.id} (guild_id in server_config.toml). "
+            "Slash commands like /rank will not show up and most features won't work. "
+            f"The bot is in: {', '.join(f'{g.name} ({g.id})' for g in bot.guilds) or 'no servers'}"
+        )
+        return
+    problems = config.validate_guild(guild)
+    if problems:
+        logger.warning(
+            f"⚠️ {len(problems)} configured ID(s) not found in '{guild.name}'. "
+            "Features using them won't work — fix them in server_config.toml:\n  - "
+            + "\n  - ".join(problems)
+        )
+    else:
+        logger.info(f"✅ All configured channels and roles found in '{guild.name}'.")
 
 
 @bot.event
@@ -188,11 +212,7 @@ async def on_ready():
 
     # 3. Sync kommandoer til en spesifikk guild (server)
     try:
-        if bot.get_guild(GUILD_ID.id) is None:
-            logger.warning(
-                f"The bot is not in guild {GUILD_ID.id} (GUILD_ID in config.py) — "
-                "slash commands like /rank will not show up in your server."
-            )
+        check_server_config()
         synced = await bot.tree.sync(guild=GUILD_ID)
         print(f"Synced {len(synced)} commands to the guild {GUILD_ID.id}.")
 
@@ -238,6 +258,11 @@ async def main():
 
 # --- Kjør boten ---
 if __name__ == "__main__":
+    if not DISCORD_TOKEN:
+        logger.error(
+            "DISCORD_TOKEN is not set. Copy .env.example to .env and paste your bot token in it."
+        )
+        sys.exit(1)
     try:
         # Bruk asyncio.run for å starte boten
         asyncio.run(main())

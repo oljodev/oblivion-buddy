@@ -1,4 +1,3 @@
-import os
 import json
 import re
 import math
@@ -14,9 +13,7 @@ from config import Channel
 
 logger = logging.getLogger("PlaytimeBoard")
 
-RCON_IP = os.getenv("RCON_IP", "localhost")
-RCON_PORT = int(os.getenv("RCON_PORT", 25575))
-RCON_PASS = os.getenv("RCON_PASS", "secret")
+from config import RCON_IP, RCON_PORT, RCON_PASS
 
 OBJECTIVE = "playtime"
 PAGE_SIZE = 10

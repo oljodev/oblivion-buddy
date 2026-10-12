@@ -1,10 +1,13 @@
-import os
+import logging
 import time
 import discord
 from discord.ext import commands
 from google import genai
 from google.genai import types
 from .ticket import load_data
+from config import GEMINI_API_KEY
+
+logger = logging.getLogger("AIHelper")
 
 SYSTEM_PROMPT = (
     "You are a helpful technical support assistant for Oblivion SMP, a Minecraft modpack server. "
@@ -21,7 +24,7 @@ RATE_LIMIT_SECONDS = 15
 class AIHelper(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.client = genai.Client(api_key=GEMINI_API_KEY)
         # {thread_id: {"history": [...], "last_used": {user_id: timestamp}}}
         self.threads: dict[int, dict] = {}
 
@@ -101,4 +104,8 @@ class AIHelper(commands.Cog):
 
 
 async def setup(bot):
+    # Valgfri funksjon: hoppes over hvis det ikke er satt noen Gemini-nøkkel
+    if not GEMINI_API_KEY:
+        logger.info("GEMINI_API_KEY not set — AI ticket helper disabled.")
+        return
     await bot.add_cog(AIHelper(bot))

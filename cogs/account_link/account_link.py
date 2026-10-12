@@ -3,7 +3,6 @@ from discord.ext import commands, tasks
 from discord import app_commands
 from aiomcrcon import Client
 from pathlib import Path
-import os
 import json
 import random
 import re
@@ -16,9 +15,7 @@ logger = logging.getLogger("AccountLink")
 
 GUILD_ID = discord.Object(id=_GUILD_ID)
 
-RCON_IP = os.getenv("RCON_IP", "localhost")
-RCON_PORT = int(os.getenv("RCON_PORT", 25575))
-RCON_PASS = os.getenv("RCON_PASS", "secret")
+from config import RCON_IP, RCON_PORT, RCON_PASS
 
 OBJECTIVE = "link_code"
 CODE_TTL_SECONDS = 5 * 60

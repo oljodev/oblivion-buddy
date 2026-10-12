@@ -5,20 +5,19 @@ import json
 import os
 import re
 from datetime import datetime
-from dotenv import load_dotenv
+import logging
 
-load_dotenv()
-
-from config import Channel, Role
+from config import Channel, Role, CURSEFORGE_API_KEY, CURSEFORGE_MODPACK_ID
 from cogs._shared.json_store import save_json
 UPDATE_CHANNEL_ID = Channel.BOT_STAFF
 MEMBER_ROLE_ID = Role.MEMBER
 
 # Configuration
-MODPACK_ID = 1356927
+MODPACK_ID = CURSEFORGE_MODPACK_ID
 VERSION_FILE = "cogs/auto_curseforge_updates/last_version.json"
 CURSEFORGE_API_BASE = "https://api.curseforge.com/v1"
-CURSEFORGE_API_KEY = os.getenv("CURSEFORGE_API_KEY", "")
+
+logger = logging.getLogger("CurseForge")
 
 
 class AutoCurseforgeUpdates(commands.Cog):
@@ -228,4 +227,10 @@ class AutoCurseforgeUpdates(commands.Cog):
 
 
 async def setup(bot):
+    # Valgfri funksjon: krever både API-nøkkel og modpakke-ID
+    if not CURSEFORGE_API_KEY or not MODPACK_ID:
+        logger.info(
+            "CURSEFORGE_API_KEY or curseforge_modpack_id not set — CurseForge update announcements disabled."
+        )
+        return
     await bot.add_cog(AutoCurseforgeUpdates(bot))

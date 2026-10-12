@@ -2,7 +2,6 @@ import discord
 from discord.ext import commands, tasks
 from aiomcrcon import Client
 from datetime import datetime
-import os
 import re
 import asyncio
 import traceback
@@ -10,9 +9,7 @@ import traceback
 from config import Channel
 STATUS_CHANNEL_ID = Channel.STATUS
 
-RCON_IP = os.getenv("RCON_IP", "localhost")
-RCON_PORT = int(os.getenv("RCON_PORT", 25575))
-RCON_PASS = os.getenv("RCON_PASS", "secret")
+from config import RCON_IP, RCON_PORT, RCON_PASS
 SERVER_NAME = "Oblivion SMP"
 
 # Keywords that should be filtered out from the player list

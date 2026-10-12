@@ -48,15 +48,10 @@ Minecraft server communication uses `aiomcrcon`. RCON credentials and server IP 
 
 ### Configuration
 
-All config is via `.env`:
-```
-DISCORD_TOKEN=
-RCON_PASS=
-RCON_IP=
-RCON_PORT=
-```
-
-Discord IDs (guild, channels, roles) are hardcoded as module-level constants in each cog — this is intentional for a single-server bot.
+`config.py` is the single source of configuration:
+- Secrets and connection settings come from `.env` (see `.env.example`): `DISCORD_TOKEN`, `RCON_IP`, `RCON_PORT`, `RCON_PASS`, and optional `MINIGAME_DISCORD_TOKEN`, `GEMINI_API_KEY`, `CURSEFORGE_API_KEY`. Import them from `config` rather than calling `os.getenv` in cogs.
+- Discord IDs are exposed as `GUILD_ID`, `Channel.*` and `Role.*`. Defaults are the Oblivion SMP IDs; an optional git-ignored `server_config.toml` (see `server_config.example.toml`) overrides them for other servers. When adding a channel/role, add it to the defaults in `config.py` and to the example file.
+- On startup `main.py` logs every configured channel/role missing from the guild.
 
 ### Key Patterns
 

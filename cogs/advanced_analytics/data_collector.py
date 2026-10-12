@@ -1,14 +1,11 @@
 from discord.ext import commands, tasks
 from datetime import datetime
-import os
 import re
 from aiomcrcon import Client
 from cogs.advanced_analytics import analytics_core
 
 # RCON Config
-RCON_IP = os.getenv("RCON_IP", "localhost")
-RCON_PORT = int(os.getenv("RCON_PORT", 25575))
-RCON_PASSWORD = os.getenv("RCON_PASS", "secret")
+from config import RCON_IP, RCON_PORT, RCON_PASS as RCON_PASSWORD
 
 MC_NAME_RE = re.compile(r"^[A-Za-z0-9_]{3,16}$")
 

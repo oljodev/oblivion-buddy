@@ -3,3 +3,4 @@ __pycache__/
 /.env
 *.tmp
 *.corrupt-*
+/server_config.toml

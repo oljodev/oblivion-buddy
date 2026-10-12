@@ -1,6 +1,6 @@
 from discord.ext import commands
-import os
 from aiomcrcon import Client
+import config
 from config import Role
 
 
@@ -15,9 +15,9 @@ class RconItemGiver(commands.Cog):
         self.ALLOWED_ROLE_ID_2 = Role.ADMIN
 
         # 2. RCON settings (loaded from environment variables)
-        self.RCON_IP = os.getenv("RCON_IP", "localhost")
-        self.RCON_PORT = int(os.getenv("RCON_PORT", 25575))
-        self.RCON_PASSWORD = os.getenv("RCON_PASS", "secret")
+        self.RCON_IP = config.RCON_IP
+        self.RCON_PORT = config.RCON_PORT
+        self.RCON_PASSWORD = config.RCON_PASS
 
         # 3. Default item prefix for convenience
         self.DEFAULT_PREFIX = "minecraft:"

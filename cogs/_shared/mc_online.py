@@ -7,7 +7,6 @@ that simultaneous callers don't multiply RCON traffic.
 
 import asyncio
 import logging
-import os
 import re
 import time
 
@@ -17,9 +16,7 @@ from cogs.account_link.account_link import get_discord_id
 
 logger = logging.getLogger("MCOnline")
 
-RCON_IP = os.getenv("RCON_IP", "localhost")
-RCON_PORT = int(os.getenv("RCON_PORT", 25575))
-RCON_PASS = os.getenv("RCON_PASS", "secret")
+from config import RCON_IP, RCON_PORT, RCON_PASS
 
 CACHE_TTL_SECONDS = 30
 
