@@ -11,7 +11,7 @@ from config import GUILD_ID as _GUILD_ID, Channel, Role
 from cogs.giveaway import auto_entry
 from cogs._shared.json_store import load_json, save_json
 
-logging.basicConfig(level=logging.INFO)
+# Logging settes opp sentralt i main.py
 logger = logging.getLogger("Giveaway")
 
 
