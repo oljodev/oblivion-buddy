@@ -27,7 +27,6 @@ owned.json (runtime):
 
 from __future__ import annotations
 
-import json
 import logging
 import random
 from pathlib import Path
@@ -37,6 +36,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from config import GUILD_ID as _GUILD_ID, Role
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("Pets")
 
@@ -51,23 +51,11 @@ OWNED_FILE = PETS_DIR / "owned.json"
 # ---------- JSON helpers ----------
 
 
-def _atomic_write(path: Path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    tmp.replace(path)
+# Felles atomisk lagring (se cogs/_shared/json_store.py)
+_atomic_write = save_json
 
 
-def _load_json(path: Path, default):
-    if not path.exists():
-        return default
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to load {path.name}: {e}")
-        return default
+_load_json = load_json
 
 
 # ---------- pets.json ----------
@@ -97,7 +85,7 @@ def _generate_default_metadata() -> list[dict]:
     return entries
 
 
-def load_pets() -> list[dict]:
+def _load_pets_uncached() -> list[dict]:
     """Load pet metadata, syncing newly-processed sprites into pets.json.
 
     On every call we union the existing pets.json (which may have admin-edited
@@ -123,6 +111,31 @@ def load_pets() -> list[dict]:
             logger.error(f"Could not write pets.json: {e}")
         return merged
     return existing
+
+
+# Cache: load_pets() kalles for hver melding, så vi leser bare fra disk når
+# pets.json eller processed/-mappen faktisk er endret.
+_pets_cache: tuple[tuple, list[dict]] | None = None
+
+
+def _pets_signature() -> tuple:
+    def mtime(path: Path):
+        try:
+            return path.stat().st_mtime_ns
+        except FileNotFoundError:
+            return None
+
+    return (mtime(PETS_FILE), mtime(PROCESSED_DIR))
+
+
+def load_pets() -> list[dict]:
+    """Pet metadata (cached until pets.json or processed/ changes)."""
+    global _pets_cache
+    if _pets_cache is not None and _pets_cache[0] == _pets_signature():
+        return _pets_cache[1]
+    pets = _load_pets_uncached()
+    _pets_cache = (_pets_signature(), pets)
+    return pets
 
 
 def get_pet(pet_id: int) -> dict | None:
@@ -165,11 +178,21 @@ def effective_owned_pets(user: discord.abc.User) -> list[dict]:
 # ---------- owned.json ----------
 
 
+# owned.json skrives bare av denne modulen, så vi holder den i minnet og
+# leser fra disk kun første gang.
+_owned_cache: dict | None = None
+
+
 def _load_owned() -> dict:
-    return _load_json(OWNED_FILE, {})
+    global _owned_cache
+    if _owned_cache is None:
+        _owned_cache = _load_json(OWNED_FILE, {})
+    return _owned_cache
 
 
 def _save_owned(data: dict):
+    global _owned_cache
+    _owned_cache = data
     try:
         _atomic_write(OWNED_FILE, data)
     except Exception as e:

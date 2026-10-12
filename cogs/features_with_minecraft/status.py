@@ -7,9 +7,9 @@ import asyncio
 import traceback
 
 from config import Channel
+from config import RCON_IP, RCON_PORT, RCON_PASS
 STATUS_CHANNEL_ID = Channel.STATUS
 
-from config import RCON_IP, RCON_PORT, RCON_PASS
 SERVER_NAME = "Oblivion SMP"
 
 # Keywords that should be filtered out from the player list

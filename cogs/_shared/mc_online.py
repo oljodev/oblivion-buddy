@@ -13,10 +13,10 @@ import time
 from aiomcrcon import Client
 
 from cogs.account_link.account_link import get_discord_id
+from config import RCON_IP, RCON_PORT, RCON_PASS
 
 logger = logging.getLogger("MCOnline")
 
-from config import RCON_IP, RCON_PORT, RCON_PASS
 
 CACHE_TTL_SECONDS = 30
 

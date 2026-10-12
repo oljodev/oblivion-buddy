@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import os
+import signal
 import sys
 import logging
 import asyncio
@@ -145,43 +146,51 @@ def check_server_config():
         logger.info(f"✅ All configured channels and roles found in '{guild.name}'.")
 
 
+_startup_done = False
+
+
 @bot.event
 async def on_ready():
-    # Sørg for at boten er klar før vi logger
-    await bot.wait_until_ready()
-    print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
+    # on_ready kjøres på nytt ved hver reconnect — engangsoppsett gjøres bare første gang
+    global _startup_done
+    logger.info(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
+    if _startup_done:
+        return
+    _startup_done = True
 
-    # 2. Kall opp setup-funksjonene i Cogs som må kjøres etter on_ready
-    if bot.get_cog("Tickets"):
+    # Cogs som trenger oppsett etter at boten er klar
+    tickets = bot.get_cog("Tickets")
+    if tickets and hasattr(tickets, "on_ready_setup"):
         try:
-            # Sjekk om metoden finnes FØR vi kaller den
-            if hasattr(bot.get_cog("Tickets"), "on_ready_setup"):
-                await bot.get_cog("Tickets").on_ready_setup()
-        except Exception as e:
-            print(f"Error calling Tickets on_ready_setup: {e}")
+            await tickets.on_ready_setup()
+        except Exception:
+            logger.exception("Error calling Tickets on_ready_setup")
 
-    # 3. Sync kommandoer til en spesifikk guild (server)
+    check_server_config()
     try:
-        check_server_config()
         synced = await bot.tree.sync(guild=GUILD_ID)
-        print(f"Synced {len(synced)} commands to the guild {GUILD_ID.id}.")
-
-    except Exception as e:
-        print(f"Error syncing commands: {e}")
-
-    print("----------------------------------------------------")
+        logger.info(f"Synced {len(synced)} commands to the guild {GUILD_ID.id}.")
+    except Exception:
+        logger.exception("Error syncing commands")
 
 
-@minigame_bot.event
-async def on_ready():
-    await minigame_bot.wait_until_ready()
-    print(f"🎮 Minigame bot logged in as {minigame_bot.user} (ID: {minigame_bot.user.id})")
+_minigame_synced = False
+
+
+async def on_minigame_ready():
+    global _minigame_synced
+    logger.info(f"🎮 Minigame bot logged in as {minigame_bot.user} (ID: {minigame_bot.user.id})")
+    if _minigame_synced:
+        return
+    _minigame_synced = True
     try:
         synced = await minigame_bot.tree.sync(guild=GUILD_ID)
-        print(f"Synced {len(synced)} minigame commands to guild {GUILD_ID.id}.")
-    except Exception as e:
-        print(f"Error syncing minigame commands: {e}")
-    print("----------------------------------------------------")
+        logger.info(f"Synced {len(synced)} minigame commands to guild {GUILD_ID.id}.")
+    except Exception:
+        logger.exception("Error syncing minigame commands")
+
+
+minigame_bot.add_listener(on_minigame_ready, "on_ready")
 
 
 async def run_main_bot():
@@ -219,7 +228,27 @@ async def run_minigame_bot():
             await minigame_bot.close()
 
 
+async def shutdown(sig_name: str):
+    """Ryddig avslutning: unload cogs (så de lagrer data i minnet) og lukk botene."""
+    logger.info(f"Received {sig_name} — shutting down...")
+    for target in (bot, minigame_bot):
+        for ext in list(target.extensions):
+            try:
+                await target.unload_extension(ext)
+            except Exception:
+                logger.exception(f"Error unloading {ext}")
+        if not target.is_closed():
+            await target.close()
+
+
 async def main():
+    # systemctl stop sender SIGTERM; uten dette ville prosessen bare blitt drept
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s.name)))
+        except NotImplementedError:
+            pass  # Windows støtter ikke signal-handlere i asyncio
     await asyncio.gather(run_main_bot(), run_minigame_bot())
 
 

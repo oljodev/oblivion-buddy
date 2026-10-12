@@ -5,16 +5,14 @@ linked online player with PERIOD_MINUTES * XP_PER_MINUTE, capped at
 DAILY_MINUTES_CAP minutes per UTC day.
 """
 
-import json
 import logging
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-import discord
 from discord.ext import commands, tasks
 
 from cogs._shared import dev_mode, mc_online, xp_store
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("PlaytimeXP")
 
@@ -29,20 +27,15 @@ def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def _atomic_write(path: Path, data: dict):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    tmp.replace(path)
+# Felles atomisk lagring (se cogs/_shared/json_store.py)
+_atomic_write = save_json
 
 
 def _load_state() -> dict:
     if not STATE_FILE.exists():
         return {}
     try:
-        with STATE_FILE.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        return load_json(STATE_FILE, {})
     except Exception as e:
         logger.error(f"Failed to load daily_state.json: {e}")
         return {}

@@ -4,11 +4,11 @@ from discord import app_commands
 import os
 from datetime import datetime
 import logging
+from config import GUILD_ID as _GUILD_ID
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("UserStats")
 
-from config import GUILD_ID as _GUILD_ID
-from cogs._shared.json_store import load_json, save_json
 
 DATA_FOLDER = "./cogs/simple_stats/user_data"
 

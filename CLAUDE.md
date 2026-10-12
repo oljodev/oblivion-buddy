@@ -14,7 +14,7 @@ systemctl --user start|stop|restart oblivion-buddy
 journalctl --user -feu oblivion-buddy
 ```
 
-No lint or test commands are configured — testing is manual.
+Lint with `uv run ruff check .` (config in `pyproject.toml`). There are no automated tests — testing is manual.
 
 ## Architecture
 
@@ -58,5 +58,6 @@ Minecraft server communication uses `aiomcrcon`. RCON credentials and server IP 
 
 - Background jobs use `@tasks.loop()` (status refresh every 60s, RCON player poll every 15m)
 - Role-based auth is checked inline; unauthorized users get silent failure
-- Giveaway JSON writes use atomic temp-file replace to avoid corruption
+- All JSON persistence goes through `cogs/_shared/json_store.py`: `save_json()` writes atomically, `load_json()` moves a corrupt file aside (`*.corrupt-<timestamp>`) instead of silently overwriting it
+- Hot-path data is kept in memory: analytics (`analytics_core`, flushed every 30s), staff stats (saved by its 60s loop), level tracking and pet ownership. On SIGTERM/SIGINT `main.py` unloads all cogs so their `cog_unload` can flush before exit
 - Comments throughout the codebase are in Norwegian

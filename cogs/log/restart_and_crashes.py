@@ -3,9 +3,9 @@ from aiomcrcon import Client
 import discord
 from discord.ext import commands, tasks
 from config import Channel
+from config import RCON_IP, RCON_PORT, RCON_PASS
 LOG_CHANNEL_ID = Channel.LOG
 
-from config import RCON_IP, RCON_PORT, RCON_PASS
 
 logger = logging.getLogger(__name__)
 

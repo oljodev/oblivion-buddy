@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -8,6 +7,7 @@ import discord
 from discord.ext import commands
 
 from config import GUILD_ID as _GUILD_ID, Channel
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("WelcomeDM")
 
@@ -16,20 +16,15 @@ DELAY_SECONDS = 10 * 60
 PENDING_FILE = Path(__file__).parent / "pending.json"
 
 
-def _atomic_write(path: Path, data: dict):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    tmp.replace(path)
+# Felles atomisk lagring (se cogs/_shared/json_store.py)
+_atomic_write = save_json
 
 
 def _load_pending() -> dict:
     try:
         if not PENDING_FILE.exists():
             return {}
-        with PENDING_FILE.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        return load_json(PENDING_FILE, {})
     except Exception as e:
         logger.error(f"Failed to load pending.json: {e}")
         return {}

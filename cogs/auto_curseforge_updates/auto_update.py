@@ -1,10 +1,8 @@
-import discord
 from discord.ext import commands, tasks
 import aiohttp
 import json
 import os
 import re
-from datetime import datetime
 import logging
 
 from config import Channel, Role, CURSEFORGE_API_KEY, CURSEFORGE_MODPACK_ID

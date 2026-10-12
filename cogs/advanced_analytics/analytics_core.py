@@ -1,3 +1,5 @@
+import atexit
+import logging
 from datetime import datetime, timedelta
 
 from cogs._shared.json_store import load_json, save_json
@@ -10,12 +12,44 @@ def get_today_str():
     return datetime.now().strftime("%Y-%m-%d")
 
 
+logger = logging.getLogger("Analytics")
+
+# Analysedataene holdes i minnet: alle cogs deler samme dict, så ingen
+# overskriver hverandres endringer. save_data() markerer bare endringer, og
+# flush() skriver til disk (kalles hvert 30. sekund av DataCollector, ved
+# unload og ved avslutning). Slik slipper vi å lese+skrive hele fila per melding.
+_data: dict | None = None
+_dirty = False
+
+
 def load_data():
-    return load_json(DATA_FILE, {})
+    global _data
+    if _data is None:
+        _data = load_json(DATA_FILE, {})
+    return _data
 
 
-def save_data(data):
-    save_json(DATA_FILE, data, indent=4)
+def save_data(data=None):
+    """Marker data som endret. Skrives til disk ved neste flush()."""
+    global _data, _dirty
+    if data is not None:
+        _data = data
+    _dirty = True
+
+
+def flush():
+    """Skriv endringer til disk hvis det finnes noen."""
+    global _dirty
+    if not _dirty or _data is None:
+        return
+    try:
+        save_json(DATA_FILE, _data, indent=4)
+        _dirty = False
+    except Exception as e:
+        logger.error(f"Failed to save analytics: {e}")
+
+
+atexit.register(flush)
 
 
 def prune_old_days(data):

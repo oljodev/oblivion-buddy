@@ -15,3 +15,16 @@ dependencies = [
     "requests>=2.32.5",
     "google-genai>=1.0.0",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17.0",
+]
+
+[tool.ruff]
+target-version = "py313"
+extend-exclude = ["scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B006", "B904"]
+ignore = ["E501"]  # Lange linjer er OK (mye norsk tekst og embeds)

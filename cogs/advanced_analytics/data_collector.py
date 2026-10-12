@@ -61,6 +61,16 @@ class DataCollector(commands.Cog):
         self.bot = bot
         self.voice_sessions = {}  # {user_id: start_datetime}
         self.mc_poll_task.start()
+        self.flush_task.start()
+
+    def cog_unload(self):
+        self.mc_poll_task.cancel()
+        self.flush_task.cancel()
+        analytics_core.flush()
+
+    @tasks.loop(seconds=30)
+    async def flush_task(self):
+        analytics_core.flush()
 
     # --- Discord Events ---
     @commands.Cog.listener()

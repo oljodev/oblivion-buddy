@@ -2,11 +2,11 @@ import discord
 from discord.ext import commands, tasks
 from datetime import datetime
 import logging
+from config import Channel
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("ServerTracker")
 
-from config import Channel
-from cogs._shared.json_store import load_json, save_json
 
 STAFF_STATS_CHANNEL_ID = Channel.SIMPLE_STATS
 LOG_CHANNEL_ID = Channel.LOG
@@ -24,6 +24,8 @@ class ServerTracker(commands.Cog):
         self.reaction_count = 0
         self.voice_events = 0
         self.message_to_edit_id = None
+
+        self._dirty = False
 
         # Load stats from file if exists
         self.load_stats()
@@ -46,7 +48,13 @@ class ServerTracker(commands.Cog):
         self.announced_member_milestones = data.get("announced_member_milestones", [])
         logger.info(f"✅ Loaded stats from {STATS_FILE}" if data else "No stats file found, starting fresh.")
 
+    def cog_unload(self):
+        self.update_embed.cancel()
+        if self._dirty:
+            self.save_stats()
+
     def save_stats(self):
+        self._dirty = False
         data = {
             "message_count": self.message_count,
             "reaction_count": self.reaction_count,
@@ -69,7 +77,7 @@ class ServerTracker(commands.Cog):
         if message.author.bot:
             return
         self.message_count += 1
-        self.save_stats()
+        self._dirty = True  # Lagres av update_embed (hvert 60. sek) i stedet for per melding
         logger.debug(f"Message from {message.author}: {message.content[:50]}")
 
     @commands.Cog.listener()
@@ -77,14 +85,14 @@ class ServerTracker(commands.Cog):
         if user.bot:
             return
         self.reaction_count += 1
-        self.save_stats()
+        self._dirty = True
         logger.debug(f"Reaction added by {user}: {reaction.emoji}")
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         if before.channel != after.channel:
             self.voice_events += 1
-            self.save_stats()
+            self._dirty = True
             logger.debug(
                 f"Voice state change for {member}: {before.channel} -> {after.channel}"
             )
@@ -149,6 +157,8 @@ class ServerTracker(commands.Cog):
     # --- Embed Updater ---
     @tasks.loop(seconds=60)
     async def update_embed(self):
+        if self._dirty:
+            self.save_stats()
         if not self.embed_channel_id:
             logger.warning("No embed_channel_id set! Please configure it in the code.")
             return

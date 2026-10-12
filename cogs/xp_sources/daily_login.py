@@ -5,7 +5,6 @@ award `100 + min(streak * 20, 200)` XP and increment their streak. Missing a
 day resets the streak to 1 on next login.
 """
 
-import json
 import logging
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -16,6 +15,7 @@ from discord.ext import commands, tasks
 
 from config import GUILD_ID as _GUILD_ID
 from cogs._shared import dev_mode, mc_online, xp_store
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("DailyLogin")
 
@@ -33,20 +33,15 @@ def _today() -> date:
     return datetime.now(timezone.utc).date()
 
 
-def _atomic_write(path: Path, data: dict):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    tmp.replace(path)
+# Felles atomisk lagring (se cogs/_shared/json_store.py)
+_atomic_write = save_json
 
 
 def _load_state() -> dict:
     if not STATE_FILE.exists():
         return {}
     try:
-        with STATE_FILE.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        return load_json(STATE_FILE, {})
     except Exception as e:
         logger.error(f"Failed to load daily_login state: {e}")
         return {}

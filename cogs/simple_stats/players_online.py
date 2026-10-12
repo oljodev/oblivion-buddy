@@ -10,10 +10,10 @@ from discord.ext import commands, tasks
 from cogs._shared.json_store import load_json, save_json
 
 from config import RCON_IP, RCON_PORT, RCON_PASS as RCON_PASSWORD
+from config import Channel
 
 logger = logging.getLogger(__name__)
 
-from config import Channel
 LOG_CHANNEL_ID = Channel.LOG
 STATS_CHANNEL_ID = Channel.SIMPLE_STATS
 

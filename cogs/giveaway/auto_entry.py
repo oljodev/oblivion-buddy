@@ -12,17 +12,17 @@ Cold start: if no snapshot >=7 days old exists for a user, the oldest
 snapshot we do have is used as the baseline.
 """
 
-import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from aiomcrcon import Client
+from config import RCON_IP, RCON_PORT, RCON_PASS
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("GiveawayAutoEntry")
 
-from config import RCON_IP, RCON_PORT, RCON_PASS
 
 LINKS_FILE = Path(__file__).parent.parent / "account_link" / "links.json"
 SNAPSHOTS_FILE = Path(__file__).parent / "playtime_snapshots.json"
@@ -37,23 +37,11 @@ TICKS_PER_SEC = 20
 REQUIRED_TICKS = REQUIRED_SECONDS * TICKS_PER_SEC
 
 
-def _atomic_write(path: Path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    tmp.replace(path)
+# Felles atomisk lagring (se cogs/_shared/json_store.py)
+_atomic_write = save_json
 
 
-def _load_json(path: Path, default):
-    if not path.exists():
-        return default
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to load {path.name}: {e}")
-        return default
+_load_json = load_json
 
 
 def parse_role_field(value: str):

@@ -3,19 +3,19 @@ from discord.ext import commands, tasks
 from discord import app_commands
 from aiomcrcon import Client
 from pathlib import Path
-import json
 import random
 import re
 import time
 import logging
 
 from config import GUILD_ID as _GUILD_ID
+from config import RCON_IP, RCON_PORT, RCON_PASS
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("AccountLink")
 
 GUILD_ID = discord.Object(id=_GUILD_ID)
 
-from config import RCON_IP, RCON_PORT, RCON_PASS
 
 OBJECTIVE = "link_code"
 CODE_TTL_SECONDS = 5 * 60
@@ -31,23 +31,11 @@ LIST_NAMES_RE = re.compile(r"online:?\s*(.*)", re.IGNORECASE)
 MC_NAME_RE = re.compile(r"^[A-Za-z0-9_]{3,16}$")
 
 
-def _atomic_write(path: Path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    tmp.replace(path)
+# Felles atomisk lagring (se cogs/_shared/json_store.py)
+_atomic_write = save_json
 
 
-def _load_json(path: Path, default):
-    if not path.exists():
-        return default
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to load {path.name}: {e}")
-        return default
+_load_json = load_json
 
 
 def get_mc_name(discord_id: int) -> str | None:

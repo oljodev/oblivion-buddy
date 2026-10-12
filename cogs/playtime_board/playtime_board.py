@@ -1,4 +1,3 @@
-import json
 import re
 import math
 import logging
@@ -10,10 +9,11 @@ from discord.ext import commands, tasks
 from aiomcrcon import Client
 
 from config import Channel
+from config import RCON_IP, RCON_PORT, RCON_PASS
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("PlaytimeBoard")
 
-from config import RCON_IP, RCON_PORT, RCON_PASS
 
 OBJECTIVE = "playtime"
 PAGE_SIZE = 10
@@ -38,23 +38,11 @@ WINDOW_7D = 7
 SCORE_RE = re.compile(r"\bhas\s+(-?\d+)\b", re.IGNORECASE)
 
 
-def _atomic_write(path: Path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    tmp.replace(path)
+# Felles atomisk lagring (se cogs/_shared/json_store.py)
+_atomic_write = save_json
 
 
-def _load_json(path: Path, default):
-    if not path.exists():
-        return default
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.warning(f"Could not read {path.name}: {e}")
-        return default
+_load_json = load_json
 
 
 def format_playtime(ticks: int) -> str:

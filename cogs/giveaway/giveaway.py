@@ -4,16 +4,16 @@ from discord import app_commands
 from datetime import datetime, timedelta
 import logging
 import random
-import json
 import asyncio
 import re
 from pathlib import Path
+from config import GUILD_ID as _GUILD_ID, Channel, Role
+from cogs.giveaway import auto_entry
+from cogs._shared.json_store import load_json, save_json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Giveaway")
 
-from config import GUILD_ID as _GUILD_ID, Channel, Role
-from cogs.giveaway import auto_entry
 
 GUILD_ID = discord.Object(id=_GUILD_ID)
 OWNER_ROLE_ID = Role.OWNER
@@ -26,19 +26,15 @@ LOG_CHANNEL_ID = Channel.LOG
 GIVEAWAYS_FILE = Path(__file__).parent / "giveaways.json"
 
 
-def _atomic_write(path: Path, data: dict):
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    tmp.replace(path)
+# Felles atomisk lagring (se cogs/_shared/json_store.py)
+_atomic_write = save_json
 
 
 def load_saved_giveaways():
     try:
         if not GIVEAWAYS_FILE.exists():
             return {}
-        with GIVEAWAYS_FILE.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        return load_json(GIVEAWAYS_FILE, {})
     except Exception as e:
         logger.error(f"Failed to load giveaways.json: {e}")
         return {}
@@ -421,7 +417,9 @@ class JoinGiveawayButton(discord.ui.View):
         linked = result["linked"]
         secs = result["seconds_in_window"]
         minutes = secs // 60
-        check = lambda b: "✅" if b else "❌"
+        def check(ok: bool) -> str:
+            return "✅" if ok else "❌"
+
         playtime_str = (
             f"{minutes} minutes" if result["current_ticks"] is not None
             else "could not query (try again later)"

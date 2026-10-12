@@ -17,7 +17,6 @@ unrecognised message lands in MC_CHAT we log the raw payload to help refine
 the parser.
 """
 
-import json
 import logging
 import re
 from pathlib import Path
@@ -28,6 +27,7 @@ from discord.ext import commands
 from config import Channel
 from cogs.account_link.account_link import get_discord_id
 from cogs._shared import dev_mode, xp_store
+from cogs._shared.json_store import load_json, save_json
 
 logger = logging.getLogger("AchievementXP")
 
@@ -65,20 +65,15 @@ ADVANCEMENT_RE = re.compile(
 )
 
 
-def _atomic_write(path: Path, data: dict):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    tmp.replace(path)
+# Felles atomisk lagring (se cogs/_shared/json_store.py)
+_atomic_write = save_json
 
 
 def _load_awarded() -> dict:
     if not AWARDED_FILE.exists():
         return {}
     try:
-        with AWARDED_FILE.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        return load_json(AWARDED_FILE, {})
     except Exception as e:
         logger.error(f"Failed to load awarded.json: {e}")
         return {}

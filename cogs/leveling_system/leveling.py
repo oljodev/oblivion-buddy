@@ -7,7 +7,7 @@ import os
 import math
 import asyncio
 import logging
-from datetime import datetime  # <-- NY: Trengs for cache-timing
+import time
 from pathlib import Path
 from easy_pil import Editor, Font
 from PIL import Image
@@ -143,6 +143,27 @@ def render_rank_card(
     return background.image_bytes
 
 
+def _scan_all_users() -> list[dict]:
+    """Leser alle brukerfiler og returnerer [{user_id, xp, level}] sortert etter XP."""
+    users = []
+    if not os.path.exists(DATA_FOLDER):
+        return users
+    for filename in os.listdir(DATA_FOLDER):
+        if not filename.endswith(".json"):
+            continue
+        try:
+            user_id = int(filename[: -len(".json")])
+            with open(os.path.join(DATA_FOLDER, filename), "r") as f:
+                total_xp = xp_store.get_total_xp(json.load(f))
+        except (ValueError, OSError) as e:
+            logger.warning(f"Skipping {filename} in leaderboard: {e}")
+            continue
+        if total_xp > 0:
+            users.append({"user_id": user_id, "xp": total_xp, "level": get_level_from_xp(total_xp)})
+    users.sort(key=lambda u: u["xp"], reverse=True)
+    return users
+
+
 # ==========================================
 # 📊 LEADERBOARD PAGINATION UI
 # ==========================================
@@ -221,40 +242,19 @@ class LevelingSystem(commands.Cog):
         self.bot = bot
         self.level_tracking = self.load_tracking_data()
 
-        # --- NY: Cache logikk ---
+        # Rank-cache (brukes av /rank og /leaderboard)
         self.cached_ranks = []
         self.last_cache_update = None
         self.cache_timeout = 60  # Oppdaterer cachen max hvert 60. sekund
         self.lock = asyncio.Lock()
 
-    # --- NY: Helper for å oppdatere rank-cachen effektivt ---
     async def update_leaderboard_cache(self):
-        """Generates a sorted list of users by XP to determine rank #."""
-        now = datetime.utcnow()
-        if (
-            self.last_cache_update
-            and (now - self.last_cache_update).total_seconds() < self.cache_timeout
-        ):
+        """Sorted list of users by XP (for rank # and /leaderboard), refreshed at most every 60s."""
+        now = time.monotonic()
+        if self.last_cache_update and now - self.last_cache_update < self.cache_timeout:
             return  # Cachen er fortsatt fersk nok
-
-        temp_users = []
-        if os.path.exists(DATA_FOLDER):
-            for filename in os.listdir(DATA_FOLDER):
-                if filename.endswith(".json") and filename != "level_tracking.json":
-                    try:
-                        # Vi leser bare msgs_sent, så det går raskt
-                        user_id = int(filename[: -len(".json")])
-                        with open(os.path.join(DATA_FOLDER, filename), "r") as f:
-                            data = json.load(f)
-                            total_xp = xp_store.get_total_xp(data)
-                            if total_xp > 0:
-                                temp_users.append({"user_id": user_id, "xp": total_xp})
-                    except Exception:
-                        pass
-
-        # Sorter etter XP
-        temp_users.sort(key=lambda x: x["xp"], reverse=True)
-        self.cached_ranks = temp_users
+        # Fillesingen kjøres i en tråd så den ikke blokkerer boten
+        self.cached_ranks = await asyncio.to_thread(_scan_all_users)
         self.last_cache_update = now
 
     def load_tracking_data(self) -> dict:
@@ -318,54 +318,81 @@ class LevelingSystem(commands.Cog):
         if not dev_mode.is_eligible_member(message.author):
             return
 
+        member = message.author
+        user_id_str = str(member.id)
+
+        # Låsen beskytter bare tilstanden (rask, ingen nettverkskall), så én
+        # brukers level-up-meldinger ikke holder igjen XP for alle andre.
         async with self.lock:
-            user_id_str = str(message.author.id)
+            # Starter-pet ved første melding (no-op når flagget er satt)
+            starter_pet = pets_mod.grant_starter_pet(member.id)
 
-            # Grant starter pet on first message (no-op once flag is set).
-            starter_pet = pets_mod.grant_starter_pet(message.author.id)
-            if starter_pet is not None:
-                await self._notify_pet_unlock(message.author, starter_pet, level=None)
-
-            # 1. Beregn nivå basert på alle XP-kilder
-            stats = self.get_user_stats(message.author.id)
-            current_xp = xp_store.get_total_xp(stats)
+            # Beregn nivå basert på alle XP-kilder
+            current_xp = xp_store.get_total_xp(self.get_user_stats(member.id))
             target_level = get_level_from_xp(current_xp)
-
-            # 2. Last inn data på NYTT for å få med siste endringer fra andre meldinger
-            self.level_tracking = self.load_tracking_data()
             last_announced = self.level_tracking.get(user_id_str, 0)
 
-            # 3. Hvis brukeren skal opp i nivå
-            if target_level > last_announced:
-                announcement_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+            new_levels = list(range(last_announced + 1, target_level + 1))
+            granted_pets = []
+            if new_levels:
+                self.level_tracking[user_id_str] = target_level
+                self.save_tracking_data()
+                # Gi pet for hvert 5. nivå opp til 100
+                for lvl in new_levels:
+                    pet = pets_mod.grant_pet_for_level(member.id, lvl)
+                    if pet is not None:
+                        granted_pets.append((pet, lvl))
 
-                for lvl in range(last_announced + 1, target_level + 1):
-                    self.level_tracking[user_id_str] = lvl
-                    self.save_tracking_data()
+        # --- Discord-kall (utenfor låsen) ---
+        if starter_pet is not None:
+            await self._notify_pet_unlock(member, starter_pet, level=None)
+        if not new_levels:
+            return
 
-                    if announcement_channel:
-                        try:
-                            await announcement_channel.send(
-                                f"🎉 Congrats {message.author.mention}! Your level is now **{lvl}**!"
-                            )
-                            await asyncio.sleep(1.2)
-                        except Exception as e:
-                            logger.error(f"Kunne ikke sende melding: {e}")
+        await self._announce_level_up(member, new_levels)
 
-                    # Gi roller for hvert milestone-nivå brukeren passerer
-                    if lvl in ROLE_MILESTONES:
-                        role_name = f"Level {lvl}"
-                        role = discord.utils.get(message.guild.roles, name=role_name)
-                        if role and role not in message.author.roles:
-                            try:
-                                await message.author.add_roles(role)
-                            except:  # noqa: E722
-                                pass
+        # Gi roller for hvert milestone-nivå brukeren passerer
+        for lvl in new_levels:
+            if lvl not in ROLE_MILESTONES:
+                continue
+            role = discord.utils.get(message.guild.roles, name=f"Level {lvl}")
+            if role is None:
+                logger.warning(f"Role 'Level {lvl}' not found — create it to give level rewards.")
+                continue
+            if role in member.roles:
+                continue
+            try:
+                await member.add_roles(role, reason=f"Reached level {lvl}")
+            except discord.Forbidden:
+                logger.error(
+                    f"Can't give role '{role.name}' to {member} — move the bot's role above it."
+                )
+            except discord.HTTPException as e:
+                logger.error(f"Failed to give role '{role.name}' to {member}: {e}")
 
-                    # Gi pet for hvert 5. nivå opp til 100
-                    granted_pet = pets_mod.grant_pet_for_level(message.author.id, lvl)
-                    if granted_pet is not None:
-                        await self._notify_pet_unlock(message.author, granted_pet, lvl)
+        for pet, lvl in granted_pets:
+            await self._notify_pet_unlock(member, pet, lvl)
+
+    async def _announce_level_up(self, member: discord.Member, new_levels: list[int]):
+        channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+        if channel is None:
+            return
+        # Store hopp (f.eks. bonus-XP) gir én melding i stedet for en vegg av meldinger
+        if len(new_levels) > 3:
+            texts = [
+                f"🎉 Congrats {member.mention}! You jumped from level **{new_levels[0] - 1}** "
+                f"to **{new_levels[-1]}**!"
+            ]
+        else:
+            texts = [f"🎉 Congrats {member.mention}! Your level is now **{lvl}**!" for lvl in new_levels]
+        for i, text in enumerate(texts):
+            try:
+                await channel.send(text)
+            except discord.HTTPException as e:
+                logger.error(f"Could not send level-up message: {e}")
+                return
+            if i < len(texts) - 1:
+                await asyncio.sleep(1.2)
 
     # --- Slash Commands ---
 
@@ -433,40 +460,14 @@ class LevelingSystem(commands.Cog):
     )
     @app_commands.guilds(GUILD_ID)
     async def leaderboard(self, interaction: discord.Interaction):
-        all_users = []
-
-        # Read all files in the data folder
-        if os.path.exists(DATA_FOLDER):
-            for filename in os.listdir(DATA_FOLDER):
-                if filename.endswith(".json") and filename != "level_tracking.json":
-                    try:
-                        with open(os.path.join(DATA_FOLDER, filename), "r") as f:
-                            data = json.load(f)
-                            user_xp = xp_store.get_total_xp(data)
-                            if user_xp > 0:
-                                user_level = get_level_from_xp(user_xp)
-                                all_users.append(
-                                    {
-                                        "user_id": data.get("user_id"),
-                                        "xp": user_xp,
-                                        "level": user_level,
-                                    }
-                                )
-                    except Exception as e:
-                        logger.error(f"Error reading {filename} for leaderboard: {e}")
-
-        # Sort users by XP descending
-        all_users.sort(key=lambda x: x["xp"], reverse=True)
-
-        if not all_users:
+        await self.update_leaderboard_cache()
+        if not self.cached_ranks:
             return await interaction.response.send_message(
                 "No data available for the leaderboard yet!", ephemeral=True
             )
 
-        view = LeaderboardView(data=all_users, user=interaction.user)
-        embed = view.generate_embed()
-
-        await interaction.response.send_message(embed=embed, view=view)
+        view = LeaderboardView(data=self.cached_ranks, user=interaction.user)
+        await interaction.response.send_message(embed=view.generate_embed(), view=view)
 
 
 async def setup(bot: commands.Bot):
